@@ -276,16 +276,19 @@ void nv2a_context_init(void)
                 renderers[g_config.display.renderer]->name);
     }
 
-    // Only prepare the renderer that was actually selected. Initializing all
-    // of them means an unused renderer's context requirements can prevent
-    // startup entirely; the GL renderer needs GLSL 4.00, which is not
-    // available on every driver that can run the Vulkan renderer fine.
-    // FIXME: if init of the selected renderer later fails and we fall back,
-    //        the fallback's context still needs creating on the main thread.
-    const PGRAPHRenderer *r = renderers[g_config.display.renderer];
-    if (r && r->ops.early_context_init) {
-        r->ops.early_context_init();
+    // FIXME: We need a mechanism for renderer to initialize new GL contexts
+    //        on the main thread at run time. For now, just let them all create
+    //        what they need.
+    for (int i = 0; i < ARRAY_SIZE(renderers); i++) {
+        const PGRAPHRenderer *r = renderers[i];
+        if (!r) {
+            continue;
+        }
+        if (r->ops.early_context_init) {
+            r->ops.early_context_init();
+        }
     }
+}
 }
 
 static bool attempt_renderer_init(PGRAPHState *pg)

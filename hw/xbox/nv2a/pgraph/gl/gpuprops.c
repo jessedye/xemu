@@ -109,7 +109,8 @@ static GLuint compile_shader(GLenum type, const char *source)
         log[sizeof(log) - 1] = '\0';
         fprintf(stderr, "GL shader type %d compilation failed: %s\n", type,
                 log);
-        assert(!"GL shader compilation failed");
+        glDeleteShader(shader);
+        return 0;
     }
 
     return shader;
@@ -121,6 +122,9 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
     GLuint vert_shader = compile_shader(GL_VERTEX_SHADER, vert_source);
     GLuint geom_shader = compile_shader(GL_GEOMETRY_SHADER, geom_source);
     GLuint frag_shader = compile_shader(GL_FRAGMENT_SHADER, frag_source);
+    if (!vert_shader || !geom_shader || !frag_shader) {
+        return 0;
+    }
 
     GLuint shader_prog = glCreateProgram();
     glAttachShader(shader_prog, vert_shader);
@@ -135,7 +139,8 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
         glGetProgramInfoLog(shader_prog, sizeof(log), NULL, log);
         log[sizeof(log) - 1] = '\0';
         fprintf(stderr, "GL shader linking failed: %s\n", log);
-        assert(!"GL shader linking failed");
+        glDeleteProgram(shader_prog);
+        return 0;
     }
 
     glDeleteShader(vert_shader);
@@ -181,7 +186,12 @@ static uint8_t *render_geom_shader_triangles(int width, int height)
 
     GLuint shader_prog = create_program(
         vertex_shader_source, geometry_shader_source, fragment_shader_source);
-    assert(shader_prog != 0);
+    if (shader_prog == 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteRenderbuffers(1, &rbo);
+        glDeleteFramebuffers(1, &fbo);
+        return NULL;
+    }
 
     glUseProgram(shader_prog);
     check_gl_error("glUseProgram");
@@ -339,6 +349,12 @@ void pgraph_gl_determine_gpu_properties(void)
     const int height = 480;
 
     uint8_t *pixels = render_geom_shader_triangles(width, height);
+    if (pixels == NULL) {
+        fprintf(stderr,
+                "GL geometry shader probe unavailable; using defaults\n");
+        return;
+    }
+
     determine_triangle_winding_order(pixels, width, height,
                                      &pgraph_gl_gpu_properties);
     g_free(pixels);
