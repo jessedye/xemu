@@ -19,6 +19,44 @@
 
 #include "renderer.h"
 
+// Largest buffer we can reasonably ask this device for. Desktop GPUs have
+// gigabytes of device-local memory; integrated and embedded parts often have
+// far less, so derive the size from what the driver reports instead of
+// assuming. Returns a value clamped to the device limits.
+static VkDeviceSize clamp_buffer_size(PGRAPHVkState *r, VkDeviceSize desired,
+                                      bool storage)
+{
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(r->physical_device, &props);
+
+    VkPhysicalDeviceMemoryProperties mem_props;
+    vkGetPhysicalDeviceMemoryProperties(r->physical_device, &mem_props);
+
+    VkDeviceSize largest_heap = 0;
+    for (uint32_t i = 0; i < mem_props.memoryHeapCount; i++) {
+        if (mem_props.memoryHeaps[i].size > largest_heap) {
+            largest_heap = mem_props.memoryHeaps[i].size;
+        }
+    }
+
+    // Leave the bulk of the heap for surfaces and textures.
+    VkDeviceSize budget = largest_heap / 16;
+    VkDeviceSize limit = MIN(desired, props.limits.maxMemoryAllocationSize);
+    if (storage) {
+        limit = MIN(limit, props.limits.maxStorageBufferRange);
+    }
+    if (budget && limit > budget) {
+        limit = budget;
+    }
+
+    // Keep something workable even on very small heaps.
+    VkDeviceSize floor = 8 * 1024 * 1024;
+    if (limit < floor) {
+        limit = MIN(desired, floor);
+    }
+    return limit;
+}
+
 static void create_buffer(PGRAPHState *pg, StorageBuffer *buffer)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
@@ -29,9 +67,16 @@ static void create_buffer(PGRAPHState *pg, StorageBuffer *buffer)
         .usage = buffer->usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
-    VK_CHECK(vmaCreateBuffer(r->allocator, &buffer_create_info,
-                             &buffer->alloc_info, &buffer->buffer,
-                             &buffer->allocation, NULL));
+    VkResult result = vmaCreateBuffer(r->allocator, &buffer_create_info,
+                                      &buffer->alloc_info, &buffer->buffer,
+                                      &buffer->allocation, NULL);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr,
+                "Failed to allocate %zu MiB buffer (usage 0x%x): vk_result %d\n",
+                (size_t)(buffer->buffer_size / (1024 * 1024)), buffer->usage,
+                result);
+    }
+    VK_CHECK(result);
 }
 
 static void destroy_buffer(PGRAPHState *pg, StorageBuffer *buffer)
@@ -63,7 +108,7 @@ void pgraph_vk_init_buffers(NV2AState *d)
     r->storage_buffers[BUFFER_STAGING_DST] = (StorageBuffer){
         .alloc_info = host_alloc_create_info,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        .buffer_size = 2048 * 2048 * 4,
+        .buffer_size = clamp_buffer_size(r, 4096 * 4096 * 4, false),
     };
 
     r->storage_buffers[BUFFER_STAGING_SRC] = (StorageBuffer){
@@ -76,7 +121,7 @@ void pgraph_vk_init_buffers(NV2AState *d)
         .alloc_info = device_alloc_create_info,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        .buffer_size = 2048 * 2048 * 8,
+        .buffer_size = clamp_buffer_size(r, (VkDeviceSize)4096 * 4096 * 8, true),
     };
 
     r->storage_buffers[BUFFER_COMPUTE_SRC] = (StorageBuffer){
