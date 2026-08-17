@@ -41,9 +41,12 @@ static VkDeviceSize clamp_buffer_size(PGRAPHVkState *r, VkDeviceSize desired,
 
     // Leave the bulk of the heap for surfaces and textures.
     VkDeviceSize budget = largest_heap / 16;
-    VkDeviceSize limit = MIN(desired, props.limits.maxMemoryAllocationSize);
-    if (storage) {
-        limit = MIN(limit, props.limits.maxStorageBufferRange);
+    VkDeviceSize limit = desired;
+    if (limit > (VkDeviceSize)props.limits.maxMemoryAllocationSize) {
+        limit = (VkDeviceSize)props.limits.maxMemoryAllocationSize;
+    }
+    if (storage && limit > (VkDeviceSize)props.limits.maxStorageBufferRange) {
+        limit = (VkDeviceSize)props.limits.maxStorageBufferRange;
     }
     if (budget && limit > budget) {
         limit = budget;
@@ -52,7 +55,7 @@ static VkDeviceSize clamp_buffer_size(PGRAPHVkState *r, VkDeviceSize desired,
     // Keep something workable even on very small heaps.
     VkDeviceSize floor = 8 * 1024 * 1024;
     if (limit < floor) {
-        limit = MIN(desired, floor);
+        limit = desired < floor ? desired : floor;
     }
     return limit;
 }
