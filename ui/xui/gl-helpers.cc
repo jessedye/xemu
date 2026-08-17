@@ -293,6 +293,15 @@ void main() {
     glAttachShader(s->prog, frag);
     glBindFragDataLocation(s->prog, 0, "out_Color");
     glLinkProgram(s->prog);
+
+    GLint link_status;
+    glGetProgramiv(s->prog, GL_LINK_STATUS, &link_status);
+    if (link_status != GL_TRUE) {
+        char link_err[1024];
+        glGetProgramInfoLog(s->prog, sizeof(link_err), NULL, link_err);
+        fprintf(stderr, "Shader program link failed: %s\n", link_err);
+        assert(0);
+    }
     glUseProgram(s->prog);
 
     // Flag shaders for deletion when program is deleted
