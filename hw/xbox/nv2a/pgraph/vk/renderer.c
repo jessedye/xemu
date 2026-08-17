@@ -24,6 +24,8 @@
 
 #if HAVE_EXTERNAL_MEMORY
 static GloContext *g_gl_context;
+#else
+static GLuint g_display_tex;
 #endif
 
 static void early_context_init(void)
@@ -200,7 +202,27 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 #else
     qemu_mutex_unlock(&d->pfifo.lock);
     pgraph_vk_wait_for_surface_download(surface);
-    return 0;
+
+    // Without GL/Vulkan external memory interop the surface is downloaded to
+    // guest VRAM, so upload it to a plain texture using the UI's context.
+    if (!g_display_tex) {
+        glGenTextures(1, &g_display_tex);
+        glBindTexture(GL_TEXTURE_2D, g_display_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, g_display_tex);
+    }
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, surface->pitch / 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, surface->width, surface->height, 0,
+                 GL_BGRA, GL_UNSIGNED_BYTE, d->vram_ptr + surface->vram_addr);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+    return g_display_tex;
 #endif
 }
 
