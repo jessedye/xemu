@@ -42,9 +42,6 @@ static VkDeviceSize clamp_buffer_size(PGRAPHVkState *r, VkDeviceSize desired,
     // Leave the bulk of the heap for surfaces and textures.
     VkDeviceSize budget = largest_heap / 16;
     VkDeviceSize limit = desired;
-    if (limit > (VkDeviceSize)props.limits.maxMemoryAllocationSize) {
-        limit = (VkDeviceSize)props.limits.maxMemoryAllocationSize;
-    }
     if (storage && limit > (VkDeviceSize)props.limits.maxStorageBufferRange) {
         limit = (VkDeviceSize)props.limits.maxStorageBufferRange;
     }
