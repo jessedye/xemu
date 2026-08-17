@@ -289,7 +289,6 @@ void nv2a_context_init(void)
         }
     }
 }
-}
 
 static bool attempt_renderer_init(PGRAPHState *pg)
 {
