@@ -207,6 +207,11 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     return r->display.gl_texture_id;
 #else
     qemu_mutex_unlock(&d->pfifo.lock);
+
+    // The download is skipped unless the surface is flagged dirty, and the
+    // flag is cleared once downloaded. Without interop we need current pixels
+    // in guest memory every frame, so request one each time.
+    qatomic_set(&surface->draw_dirty, true);
     pgraph_vk_wait_for_surface_download(surface);
 
     static int dbg_n;
