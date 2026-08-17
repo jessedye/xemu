@@ -145,7 +145,7 @@ void xemu_hud_init(SDL_Window* window, void* sdl_gl_context)
 
     // Setup Platform/Renderer bindings
     ImGui_ImplSDL3_InitForOpenGL(window, sdl_gl_context);
-    ImGui_ImplOpenGL3_Init("#version 150");
+    ImGui_ImplOpenGL3_Init("#version 140");
     ImPlot::CreateContext();
 
 #if defined(_WIN32)
