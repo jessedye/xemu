@@ -238,11 +238,23 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 #else
     qemu_mutex_unlock(&d->pfifo.lock);
 
+    /* Time the download and the upload separately: the display path runs at
+     * the host refresh rate, which is faster than the guest produces frames,
+     * so this is where redundant work would show up. */
+    int64_t t0 = 0, t1 = 0, t2 = 0;
+    if (g_fps_report) {
+        t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    }
+
     // The download is skipped unless the surface is flagged dirty, and the
     // flag is cleared once downloaded. Without interop we need current pixels
     // in guest memory every frame, so request one each time.
     qatomic_set(&surface->draw_dirty, true);
     pgraph_vk_wait_for_surface_download(surface);
+
+    if (g_fps_report) {
+        t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    }
 
 
     // Without GL/Vulkan external memory interop the surface is downloaded to
@@ -263,6 +275,26 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, surface->width, surface->height, 0,
                  GL_BGRA, GL_UNSIGNED_BYTE, d->vram_ptr + surface->vram_addr);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+    if (g_fps_report) {
+        static int64_t win_ns, dl_ns, ul_ns;
+        static unsigned n;
+        t2 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        dl_ns += t1 - t0;
+        ul_ns += t2 - t1;
+        n++;
+        if (win_ns == 0) {
+            win_ns = t2;
+        } else if (t2 - win_ns >= 5 * NANOSECONDS_PER_SECOND) {
+            fprintf(stderr,
+                    "xemu-present: %u frames, download %.2f ms/frame, "
+                    "upload %.2f ms/frame\n",
+                    n, dl_ns / 1.0e6 / n, ul_ns / 1.0e6 / n);
+            win_ns = t2;
+            dl_ns = ul_ns = 0;
+            n = 0;
+        }
+    }
 
     return g_display_tex;
 #endif
