@@ -216,6 +216,40 @@ void pgraph_vk_init_buffers(NV2AState *d)
         create_buffer(pg, &r->storage_buffers[i]);
     }
 
+    /* Several of these are used as a pair, with data copied from one into the
+     * other, and each takes its size from its partner before anything is
+     * allocated. If one of a pair ended up smaller because the device was short
+     * of memory, reconcile both to the smaller size so a copy cannot outrun the
+     * smaller allocation. Lowering a recorded size is always safe: the buffer
+     * itself is at least that large. */
+    static const int paired_buffers[][2] = {
+        { BUFFER_STAGING_DST, BUFFER_STAGING_SRC },
+        { BUFFER_COMPUTE_DST, BUFFER_COMPUTE_SRC },
+        { BUFFER_INDEX, BUFFER_INDEX_STAGING },
+        { BUFFER_VERTEX_INLINE, BUFFER_VERTEX_INLINE_STAGING },
+        { BUFFER_UNIFORM, BUFFER_UNIFORM_STAGING },
+    };
+
+    for (int i = 0; i < ARRAY_SIZE(paired_buffers); i++) {
+        StorageBuffer *a = &r->storage_buffers[paired_buffers[i][0]];
+        StorageBuffer *b = &r->storage_buffers[paired_buffers[i][1]];
+
+        if (a->buffer_size == b->buffer_size) {
+            continue;
+        }
+
+        VkDeviceSize smaller =
+            a->buffer_size < b->buffer_size ? a->buffer_size : b->buffer_size;
+        fprintf(stderr,
+                "Paired buffers were allocated at different sizes "
+                "(%zu and %zu MiB); using %zu MiB for both\n",
+                (size_t)(a->buffer_size / (1024 * 1024)),
+                (size_t)(b->buffer_size / (1024 * 1024)),
+                (size_t)(smaller / (1024 * 1024)));
+        a->buffer_size = smaller;
+        b->buffer_size = smaller;
+    }
+
     // FIXME: Add fallback path for device using host mapped memory
 
     int buffers_to_map[] = { BUFFER_VERTEX_RAM,
