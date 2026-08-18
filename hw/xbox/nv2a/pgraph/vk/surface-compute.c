@@ -334,19 +334,23 @@ void pgraph_vk_compute_finish_complete(PGRAPHVkState *r)
 
 static int get_workgroup_size_for_output_units(PGRAPHVkState *r, int output_units)
 {
-    int group_size = 1024;
-
     // FIXME: Smarter workgroup size calculation could factor in multiple
     //        submissions. For now we will just pick the highest number that
     //        evenly divides output_units.
 
-    while (group_size > 1) {
-        if (group_size > r->device_props.limits.maxComputeWorkGroupSize[0]) {
-            continue;
-        }
-        if (output_units % group_size == 0) {
-            break;
-        }
+    // Clamp to what the device actually supports before searching. Desktop
+    // GPUs report 1024 here, but smaller parts report less (V3D reports 256),
+    // and dispatching a workgroup larger than the limit is invalid.
+    int max_group_size = r->device_props.limits.maxComputeWorkGroupSize[0];
+    if (r->device_props.limits.maxComputeWorkGroupInvocations < max_group_size) {
+        max_group_size = r->device_props.limits.maxComputeWorkGroupInvocations;
+    }
+
+    int group_size = 1024;
+    while (group_size > 1 && group_size > max_group_size) {
+        group_size /= 2;
+    }
+    while (group_size > 1 && output_units % group_size != 0) {
         group_size /= 2;
     }
 
