@@ -123,7 +123,7 @@ static void init_render_to_texture(PGRAPHState *pg)
     PGRAPHGLState *r = pg->gl_renderer_state;
 
     const char *vs =
-        "#version 330\n"
+        "#version 140\n"
         "void main()\n"
         "{\n"
         "    float x = -1.0 + float((gl_VertexID & 1) << 2);\n"
@@ -131,10 +131,10 @@ static void init_render_to_texture(PGRAPHState *pg)
         "    gl_Position = vec4(x, y, 0, 1);\n"
         "}\n";
     const char *fs =
-        "#version 330\n"
+        "#version 140\n"
         "uniform sampler2D tex;\n"
         "uniform vec2 surface_size;\n"
-        "layout(location = 0) out vec4 out_Color;\n"
+        "out vec4 out_Color;\n"
         "void main()\n"
         "{\n"
         "    vec2 texCoord = gl_FragCoord.xy / textureSize(tex, 0).xy;\n"

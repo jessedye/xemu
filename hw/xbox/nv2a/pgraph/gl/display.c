@@ -42,7 +42,7 @@ void pgraph_gl_init_display(NV2AState *d)
     r->gl_display_buffer_type = 0;
 
     const char *vs =
-        "#version 330\n"
+        "#version 140\n"
         "void main()\n"
         "{\n"
         "    float x = -1.0 + float((gl_VertexID & 1) << 2);\n"
@@ -52,7 +52,7 @@ void pgraph_gl_init_display(NV2AState *d)
     /* FIXME: improve interlace handling, pvideo */
 
     const char *fs =
-        "#version 330\n"
+        "#version 140\n"
         "uniform sampler2D tex;\n"
         "uniform bool pvideo_enable;\n"
         "uniform sampler2D pvideo_tex;\n"
@@ -63,7 +63,7 @@ void pgraph_gl_init_display(NV2AState *d)
         "uniform vec3 pvideo_color_key;\n"
         "uniform vec2 display_size;\n"
         "uniform float line_offset;\n"
-        "layout(location = 0) out vec4 out_Color;\n"
+        "out vec4 out_Color;\n"
         "void main()\n"
         "{\n"
         "    vec2 texCoord = gl_FragCoord.xy/display_size;\n"
