@@ -75,16 +75,28 @@ void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         val &= 0x07FFFFFF;
         // assert(val < memory_region_size(d->vram));
         d->pcrtc.start = val;
-        /* Only distinct values, bounded: the scanout address is what the
-         * display path looks a surface up by, so a stuck 0 explains a blank
-         * screen. */
-        {
-            static uint32_t last_logged = 0xFFFFFFFF;
-            static int trace_n;
-            if (val != last_logged && trace_n < 16) {
-                fprintf(stderr, "xtrace: PCRTC_START = 0x%x\n", (unsigned)val);
-                last_logged = val;
-                trace_n++;
+        /* A change of scanout address is a page flip, so counting distinct
+         * values per second gives the guest's real frame rate -- which is not
+         * the same as the rate the host presents at. */
+        if (getenv("XEMU_FPS")) {
+            static uint32_t last_val = 0xFFFFFFFF;
+            static int64_t window_start_ns;
+            static unsigned flips;
+
+            if (val != last_val) {
+                last_val = val;
+                flips++;
+            }
+
+            int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+            if (window_start_ns == 0) {
+                window_start_ns = now;
+            } else if (now - window_start_ns >= 5 * NANOSECONDS_PER_SECOND) {
+                double secs =
+                    (double)(now - window_start_ns) / NANOSECONDS_PER_SECOND;
+                fprintf(stderr, "xemu-guest-fps: %.1f flips/s\n", flips / secs);
+                window_start_ns = now;
+                flips = 0;
             }
         }
 
