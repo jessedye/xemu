@@ -691,6 +691,17 @@ static void surface_put(NV2AState *d, SurfaceBinding *surface)
     invalidate_overlapping_surfaces(d, surface);
     register_cpu_access_callback(d, surface);
 
+    {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: surface_put count=%lu vram_addr=0x%lx "
+                            "%ux%u color=%d\n",
+                    n, (unsigned long)surface->vram_addr, surface->width,
+                    surface->height, (int)surface->color);
+            next *= 10;
+        }
+    }
+
     QTAILQ_INSERT_HEAD(&r->surfaces, surface, entry);
 }
 

@@ -66,11 +66,15 @@ void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         val &= 0x07FFFFFF;
         // assert(val < memory_region_size(d->vram));
         d->pcrtc.start = val;
+        /* Only distinct values, bounded: the scanout address is what the
+         * display path looks a surface up by, so a stuck 0 explains a blank
+         * screen. */
         {
+            static uint32_t last_logged = 0xFFFFFFFF;
             static int trace_n;
-            if (trace_n < 8) {
-                fprintf(stderr, "xtrace: PCRTC_START written = 0x%x\n",
-                        (unsigned)val);
+            if (val != last_logged && trace_n < 16) {
+                fprintf(stderr, "xtrace: PCRTC_START = 0x%x\n", (unsigned)val);
+                last_logged = val;
                 trace_n++;
             }
         }

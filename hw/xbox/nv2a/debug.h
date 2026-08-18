@@ -34,6 +34,17 @@
 # define DEBUG_NV2A 0
 #endif
 
+/* Counts events and reports on an exponential backoff (1st, 10th, 100th...).
+ * Output is bounded to ~7 lines however long the guest runs, so it is safe to
+ * put on a hot path. */
+#define XTRACE_COUNT(label) do { \
+    static unsigned long xt_n, xt_next = 1; \
+    if (++xt_n >= xt_next) { \
+        fprintf(stderr, "xtrace: %s count=%lu\n", (label), xt_n); \
+        xt_next *= 10; \
+    } \
+} while (0)
+
 #if DEBUG_NV2A
 # define NV2A_DPRINTF(format, ...)       printf("nv2a: " format, ## __VA_ARGS__)
 #else

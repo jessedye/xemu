@@ -184,8 +184,24 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     SurfaceBinding *surface = pgraph_vk_surface_get_within(
         d, d->pcrtc.start + vga_display_params.line_offset);
     if (surface == NULL || !surface->color) {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: framebuffer MISS count=%lu "
+                            "pcrtc.start=0x%lx line_offset=0x%x surface=%p\n",
+                    n, (unsigned long)d->pcrtc.start,
+                    (unsigned)vga_display_params.line_offset, (void *)surface);
+            next *= 10;
+        }
         qemu_mutex_unlock(&d->pfifo.lock);
         return 0;
+    }
+    {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: framebuffer HIT count=%lu %ux%u\n", n,
+                    surface->width, surface->height);
+            next *= 10;
+        }
     }
 
     assert(surface->color);

@@ -82,14 +82,7 @@ uint64_t pgraph_read(void *opaque, hwaddr addr, unsigned int size)
 
 void pgraph_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 {
-    {
-        static int trace_n;
-        if (trace_n < 8) {
-            fprintf(stderr, "xtrace: pgraph_write addr=0x%lx\n",
-                    (unsigned long)addr);
-            trace_n++;
-        }
-    }
+    XTRACE_COUNT("pgraph_write");
 
     NV2AState *d = (NV2AState *)opaque;
     PGRAPHState *pg = &d->pgraph;
@@ -633,6 +626,8 @@ int pgraph_method(NV2AState *d, unsigned int subchannel,
                    size_t max_lookahead_words, bool inc)
 {
     int num_processed = 1;
+
+    XTRACE_COUNT("pgraph_method");
 
     PGRAPHState *pg = &d->pgraph;
 
