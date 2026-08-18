@@ -82,6 +82,15 @@ uint64_t pgraph_read(void *opaque, hwaddr addr, unsigned int size)
 
 void pgraph_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 {
+    {
+        static int trace_n;
+        if (trace_n < 8) {
+            fprintf(stderr, "xtrace: pgraph_write addr=0x%lx\n",
+                    (unsigned long)addr);
+            trace_n++;
+        }
+    }
+
     NV2AState *d = (NV2AState *)opaque;
     PGRAPHState *pg = &d->pgraph;
 
