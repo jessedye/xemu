@@ -826,6 +826,8 @@ static void gl_render_frame(struct xemu_console *scon)
 
     assert(glGetError() == GL_NO_ERROR);
 
+    flip_required = nv2a_framebuffer_is_top_down();
+
     if (tex == 0) {
         xemu_main_loop_lock();
         // FIXME: Don't upload if notdirty

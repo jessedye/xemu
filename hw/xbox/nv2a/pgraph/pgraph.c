@@ -356,6 +356,24 @@ void pgraph_destroy(PGRAPHState *pg)
     qemu_mutex_destroy(&pg->lock);
 }
 
+/* The UI samples the framebuffer texture with GL's bottom-left origin. A
+ * renderer that hands back guest memory uploaded as-is is top-down and needs
+ * the UI to flip it. */
+bool nv2a_framebuffer_is_top_down(void)
+{
+    NV2AState *d = g_nv2a;
+    PGRAPHState *pg = &d->pgraph;
+    bool top_down = false;
+
+    qemu_mutex_lock(&pg->renderer_lock);
+    if (pg->renderer->ops.framebuffer_is_top_down) {
+        top_down = pg->renderer->ops.framebuffer_is_top_down(d);
+    }
+    qemu_mutex_unlock(&pg->renderer_lock);
+
+    return top_down;
+}
+
 int nv2a_get_framebuffer_surface(void)
 {
     NV2AState *d = g_nv2a;
@@ -626,17 +644,6 @@ int pgraph_method(NV2AState *d, unsigned int subchannel,
                    size_t max_lookahead_words, bool inc)
 {
     int num_processed = 1;
-
-    /* The guest submits only a few hundred methods before it stops, so log the
-     * first 300 in full: the tail of that list is what it was doing when it
-     * stalled. */
-    {
-        static unsigned long n;
-        if (++n <= 300) {
-            fprintf(stderr, "xtrace: method %lu ch=%u m=0x%x p=0x%x\n",
-                    n, subchannel, (unsigned)method, (unsigned)parameter);
-        }
-    }
 
     PGRAPHState *pg = &d->pgraph;
 

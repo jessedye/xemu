@@ -28,8 +28,13 @@ static GloContext *g_gl_context;
 static GLuint g_display_tex;
 #endif
 
+/* Set XEMU_FPS=1 to print the display frame rate every 5 seconds. */
+static bool g_fps_report;
+
 static void early_context_init(void)
 {
+    g_fps_report = getenv("XEMU_FPS") != NULL;
+
 #if HAVE_EXTERNAL_MEMORY
     g_gl_context = glo_context_create();
 #endif
@@ -171,6 +176,13 @@ static void pgraph_vk_pre_shutdown_wait(NV2AState *d)
     // qemu_event_wait(&d->pgraph.vk_renderer_state->shader_cache_writeback_complete);   
 }
 
+static bool pgraph_vk_framebuffer_is_top_down(NV2AState *d)
+{
+    /* With external memory the UI samples the Vulkan image directly; without
+     * it we upload guest VRAM, which is stored top-down. */
+    return !HAVE_EXTERNAL_MEMORY;
+}
+
 static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
@@ -195,12 +207,20 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
         qemu_mutex_unlock(&d->pfifo.lock);
         return 0;
     }
-    {
-        static unsigned long n, next = 1;
-        if (++n >= next) {
-            fprintf(stderr, "xtrace: framebuffer HIT count=%lu %ux%u\n", n,
+    /* One call per presented frame, so this is the display frame rate. */
+    if (g_fps_report) {
+        static int64_t window_start_ns;
+        static unsigned frames;
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        frames++;
+        if (window_start_ns == 0) {
+            window_start_ns = now;
+        } else if (now - window_start_ns >= 5 * NANOSECONDS_PER_SECOND) {
+            double secs = (double)(now - window_start_ns) / NANOSECONDS_PER_SECOND;
+            fprintf(stderr, "xemu-fps: %.1f fps (%ux%u)\n", frames / secs,
                     surface->width, surface->height);
-            next *= 10;
+            window_start_ns = now;
+            frames = 0;
         }
     }
 
@@ -273,6 +293,7 @@ static PGRAPHRenderer pgraph_vk_renderer = {
         .set_surface_scale_factor = pgraph_vk_set_surface_scale_factor,
         .get_surface_scale_factor = pgraph_vk_get_surface_scale_factor,
         .get_framebuffer_surface = pgraph_vk_get_framebuffer_surface,
+            .framebuffer_is_top_down = pgraph_vk_framebuffer_is_top_down,
         .get_gpu_properties = pgraph_vk_get_gpu_properties,
     }
 };
