@@ -3053,11 +3053,6 @@ void qemu_init(int argc, char **argv)
         fake_argv[fake_argc++] = strdup(flashrom_path);
     }
 
-    fprintf(stderr, "xemu-dbg: autostart=%d eeprom=%s flash=%s show_welcome=%d\n",
-            autostart, get_eeprom_path() ? get_eeprom_path() : "(null)",
-            g_config.sys.files.flashrom_path,
-            (int)g_config.general.show_welcome);
-
     int mem = ((int)g_config.sys.mem_limit + 1) * 64;
     fake_argv[fake_argc++] = strdup("-m");
     fake_argv[fake_argc++] = g_strdup_printf("%d", mem);

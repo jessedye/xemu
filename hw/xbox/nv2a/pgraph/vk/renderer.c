@@ -183,24 +183,6 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 
     SurfaceBinding *surface = pgraph_vk_surface_get_within(
         d, d->pcrtc.start + vga_display_params.line_offset);
-    static int dbg_null;
-    if ((surface == NULL || !surface->color) && dbg_null < 5) {
-        int n = 0;
-        SurfaceBinding *it;
-        QTAILQ_FOREACH (it, &r->surfaces, entry) { n++; }
-        fprintf(stderr,
-                "xemu-dbg: no color surface: want=0x%lx surfaces=%d "
-                "pcrtc_start=0x%lx line_offset=%u\n",
-                (unsigned long)(d->pcrtc.start + vga_display_params.line_offset),
-                n, (unsigned long)d->pcrtc.start,
-                vga_display_params.line_offset);
-        QTAILQ_FOREACH (it, &r->surfaces, entry) {
-            fprintf(stderr, "xemu-dbg:   have vram=0x%lx size=%zu %ux%u color=%d\n",
-                    (unsigned long)it->vram_addr, (size_t)it->size,
-                    it->width, it->height, (int)it->color);
-        }
-        dbg_null++;
-    }
     if (surface == NULL || !surface->color) {
         qemu_mutex_unlock(&d->pfifo.lock);
         return 0;
@@ -226,13 +208,6 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     qatomic_set(&surface->draw_dirty, true);
     pgraph_vk_wait_for_surface_download(surface);
 
-    static int dbg_n;
-    if (dbg_n < 3) {
-        fprintf(stderr, "xemu-dbg: fallback upload %ux%u pitch=%u vram=0x%lx\n",
-                surface->width, surface->height, surface->pitch,
-                (unsigned long)surface->vram_addr);
-        dbg_n++;
-    }
 
     // Without GL/Vulkan external memory interop the surface is downloaded to
     // guest VRAM, so upload it to a plain texture using the UI's context.
