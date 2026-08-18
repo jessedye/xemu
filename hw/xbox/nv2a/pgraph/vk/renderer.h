@@ -543,6 +543,10 @@ void pgraph_vk_finalize_display(PGRAPHState *pg);
 void pgraph_vk_render_display(PGRAPHState *pg);
 
 // texture.c
+VkResult pgraph_vk_create_image_evicting(PGRAPHVkState *r,
+                                         const VkImageCreateInfo *image_info,
+                                         const VmaAllocationCreateInfo *alloc_info,
+                                         VkImage *image, VmaAllocation *allocation);
 void pgraph_vk_init_textures(PGRAPHState *pg);
 void pgraph_vk_finalize_textures(PGRAPHState *pg);
 void pgraph_vk_bind_textures(NV2AState *d);

@@ -32,6 +32,48 @@
 
 static void texture_cache_release_node_resources(PGRAPHVkState *r, TextureBinding *snode);
 
+/* Create an image, releasing least-recently-used cached textures if the device
+ * is out of memory. The texture cache evicts on entry count, but on a unified
+ * memory device the GPU can be exhausted well before that limit, which happens
+ * when a level load pulls in far more textures than a menu used. Entries that
+ * are bound or referenced by the command buffer in flight refuse eviction, so
+ * this never releases something still in use. */
+VkResult pgraph_vk_create_image_evicting(PGRAPHVkState *r,
+                                         const VkImageCreateInfo *image_info,
+                                         const VmaAllocationCreateInfo *alloc_info,
+                                         VkImage *image, VmaAllocation *allocation)
+{
+    VkResult result = vmaCreateImage(r->allocator, image_info, alloc_info,
+                                     image, allocation, NULL);
+
+    if (result != VK_ERROR_OUT_OF_DEVICE_MEMORY &&
+        result != VK_ERROR_OUT_OF_HOST_MEMORY) {
+        return result;
+    }
+
+    unsigned int evicted = 0;
+    while (result != VK_SUCCESS && lru_try_evict_one(&r->texture_cache)) {
+        evicted++;
+        result = vmaCreateImage(r->allocator, image_info, alloc_info,
+                                image, allocation, NULL);
+    }
+
+    if (evicted) {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr,
+                    "Device memory exhausted; evicted %u cached textures to "
+                    "make room (occurrence %lu, result %d)\n",
+                    evicted, n, result);
+            next *= 10;
+        }
+    }
+
+    return result;
+}
+
+
+
 static const VkImageType dimensionality_to_vk_image_type[] = {
     0,
     VK_IMAGE_TYPE_1D,
@@ -934,9 +976,9 @@ static void create_dummy_texture(PGRAPHState *pg)
     VkImage texture_image;
     VmaAllocation texture_allocation;
 
-    VK_CHECK(vmaCreateImage(r->allocator, &image_create_info,
-                            &alloc_create_info, &texture_image,
-                            &texture_allocation, NULL));
+    VK_CHECK(pgraph_vk_create_image_evicting(r, &image_create_info,
+                                             &alloc_create_info, &texture_image,
+                                             &texture_allocation));
 
     VkImageViewCreateInfo image_view_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1236,9 +1278,11 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
     };
 
-    VK_CHECK(vmaCreateImage(r->allocator, &image_create_info,
-                            &alloc_create_info, &snode->image,
-                            &snode->allocation, NULL));
+    VkResult result = pgraph_vk_create_image_evicting(
+        r, &image_create_info, &alloc_create_info, &snode->image,
+        &snode->allocation);
+
+    VK_CHECK(result);
 
     VkImageViewCreateInfo image_view_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
