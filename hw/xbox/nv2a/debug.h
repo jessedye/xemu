@@ -31,7 +31,7 @@
 } while (0)
 
 #ifndef DEBUG_NV2A
-# define DEBUG_NV2A 0
+# define DEBUG_NV2A 1
 #endif
 
 #if DEBUG_NV2A
