@@ -80,6 +80,8 @@ uint64_t pramdac_read(void *opaque, hwaddr addr, unsigned int size)
 
 void pramdac_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 {
+    XTRACE_COUNT("pramdac_write");
+
     NV2AState *d = (NV2AState *)opaque;
     uint32_t m, n, p;
 

@@ -1600,6 +1600,18 @@ void pgraph_vk_surface_update(NV2AState *d, bool upload, bool color_write,
             (pg->clearing || pgraph_color_write_enabled(pg));
     zeta_write = zeta_write && (pg->clearing || pgraph_zeta_write_enabled(pg));
 
+    {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: surface_update count=%lu upload=%d "
+                            "color_write=%d zeta_write=%d clearing=%d "
+                            "cwe=%d\n",
+                    n, (int)upload, (int)color_write, (int)zeta_write,
+                    (int)pg->clearing, (int)pgraph_color_write_enabled(pg));
+            next *= 10;
+        }
+    }
+
     if (upload) {
         bool fb_dirty = framebuffer_dirty(pg);
         if (fb_dirty) {

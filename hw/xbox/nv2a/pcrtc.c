@@ -49,6 +49,8 @@ uint64_t pcrtc_read(void *opaque, hwaddr addr, unsigned int size)
 
 void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 {
+    XTRACE_COUNT("pcrtc_write");
+
     NV2AState *d = (NV2AState *)opaque;
 
     nv2a_reg_log_write(NV_PCRTC, addr, size, val);
