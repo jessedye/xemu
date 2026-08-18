@@ -393,6 +393,10 @@ typedef struct PGRAPHVkState {
     QemuEvent dirty_surfaces_download_complete; // common
 
     Lru texture_cache;
+    /* Entry currently being populated: it is not bound yet, so it would
+     * otherwise pass the eviction check and could be freed underneath us when
+     * an allocation evicts to make room. */
+    TextureBinding *texture_in_creation;
     TextureBinding *texture_cache_entries;
     TextureBinding *texture_bindings[NV2A_MAX_TEXTURES];
     TextureBinding dummy_texture;

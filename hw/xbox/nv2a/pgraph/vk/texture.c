@@ -1278,9 +1278,11 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
     };
 
+    r->texture_in_creation = snode;
     VkResult result = pgraph_vk_create_image_evicting(
         r, &image_create_info, &alloc_create_info, &snode->image,
         &snode->allocation);
+    r->texture_in_creation = NULL;
 
     VK_CHECK(result);
 
@@ -1515,6 +1517,12 @@ static bool texture_cache_entry_pre_evict(Lru *lru, LruNode *node)
 {
     PGRAPHVkState *r = container_of(lru, PGRAPHVkState, texture_cache);
     TextureBinding *snode = container_of(node, TextureBinding, node);
+
+    // Being populated right now: its image handles are not valid yet, so
+    // releasing them here would destroy uninitialised state.
+    if (snode == r->texture_in_creation) {
+        return false;
+    }
 
     // FIXME: Simplify. We don't really need to check bindings
 
