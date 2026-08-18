@@ -31,6 +31,14 @@ static GLuint g_display_tex;
 /* Set XEMU_FPS=1 to print the display frame rate every 5 seconds. */
 static bool g_fps_report;
 
+#define XTRACE_SKIP(label) do { \
+    static unsigned long xk_n, xk_next = 1; \
+    if (++xk_n >= xk_next) { \
+        fprintf(stderr, "xtrace: %s count=%lu\n", (label), xk_n); \
+        xk_next *= 10; \
+    } \
+} while (0)
+
 static void early_context_init(void)
 {
     g_fps_report = getenv("XEMU_FPS") != NULL;
@@ -227,6 +235,35 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     assert(surface->color);
 
     surface->frame_time = pg->frame_time;
+
+#if !HAVE_EXTERNAL_MEMORY
+    /* The UI presents at the host refresh rate, which is faster than the
+     * guest produces frames, so the same image is often requested several
+     * times. Downloading it again costs a GPU stall plus a full-frame copy in
+     * each direction, so reuse the texture until the surface is drawn to
+     * again or the guest flips to a different buffer. */
+    {
+        static unsigned last_draw_time;
+        static hwaddr last_vram_addr;
+        static bool have_cached;
+
+        bool unchanged = have_cached && g_display_tex &&
+                         surface->draw_time == last_draw_time &&
+                         surface->vram_addr == last_vram_addr;
+
+        last_draw_time = surface->draw_time;
+        last_vram_addr = surface->vram_addr;
+        have_cached = true;
+
+        if (unchanged) {
+            if (g_fps_report) {
+                XTRACE_SKIP("present_reused_texture");
+            }
+            qemu_mutex_unlock(&d->pfifo.lock);
+            return g_display_tex;
+        }
+    }
+#endif
 
 #if HAVE_EXTERNAL_MEMORY
     qemu_event_reset(&d->pgraph.sync_complete);
