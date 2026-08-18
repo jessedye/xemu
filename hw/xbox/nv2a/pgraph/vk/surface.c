@@ -29,6 +29,14 @@
 #include "ui/xemu-settings.h"
 #include "renderer.h"
 
+#define XTRACE_SURF(label) do { \
+    static unsigned long xs_n, xs_next = 1; \
+    if (++xs_n >= xs_next) { \
+        fprintf(stderr, "xtrace: %s count=%lu\n", (label), xs_n); \
+        xs_next *= 10; \
+    } \
+} while (0)
+
 const int num_invalid_surfaces_to_keep = 10;  // FIXME: Make automatic
 const int max_surface_frame_time_delta = 5;
 
@@ -1418,6 +1426,22 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
 
     Surface *pg_surface = color ? &pg->surface_color : &pg->surface_zeta;
 
+    if (color) {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: usp_COLOR count=%lu upload=%d "
+                            "addr=0x%lx %ux%u fmt=0x%x bound=%d bufdirty=%d "
+                            "drawdirty=%d\n",
+                    n, (int)upload, (unsigned long)target.vram_addr,
+                    target.width, target.height,
+                    (unsigned)pg->surface_shape.color_format,
+                    (int)(r->color_binding != NULL),
+                    (int)pg_surface->buffer_dirty,
+                    (int)pg_surface->draw_dirty);
+            next *= 10;
+        }
+    }
+
     bool mem_dirty = !tcg_enabled() && memory_region_test_and_clear_dirty(
                                            d->vram, target.vram_addr,
                                            target.size, DIRTY_MEMORY_NV2A);
@@ -1613,6 +1637,7 @@ void pgraph_vk_surface_update(NV2AState *d, bool upload, bool color_write,
     }
 
     if (upload) {
+        XTRACE_SURF("surface_update_UPLOAD");
         bool fb_dirty = framebuffer_dirty(pg);
         if (fb_dirty) {
             memcpy(&pg->last_surface_shape, &pg->surface_shape,

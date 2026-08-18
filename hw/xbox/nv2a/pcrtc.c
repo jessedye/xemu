@@ -49,7 +49,14 @@ uint64_t pcrtc_read(void *opaque, hwaddr addr, unsigned int size)
 
 void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
 {
-    XTRACE_COUNT("pcrtc_write");
+    {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            fprintf(stderr, "xtrace: pcrtc_write count=%lu addr=0x%lx val=0x%lx\n",
+                    n, (unsigned long)addr, (unsigned long)val);
+            next *= 10;
+        }
+    }
 
     NV2AState *d = (NV2AState *)opaque;
 
