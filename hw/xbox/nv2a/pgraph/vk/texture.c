@@ -1282,9 +1282,28 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
     VkResult result = pgraph_vk_create_image_evicting(
         r, &image_create_info, &alloc_create_info, &snode->image,
         &snode->allocation);
+
+    if (result == VK_SUCCESS) {
+        VmaAllocationInfo alloc_info;
+        vmaGetAllocationInfo(r->allocator, snode->allocation, &alloc_info);
+        snode->allocation_size = alloc_info.size;
+        r->texture_cache_bytes += alloc_info.size;
+    }
     r->texture_in_creation = NULL;
 
     VK_CHECK(result);
+
+    /* Keep the cache inside its budget so later allocations do not have to
+     * fail first. Entries that are bound or in flight refuse eviction, so this
+     * stops early rather than freeing anything still needed. */
+    while (r->texture_cache_bytes > r->texture_cache_budget) {
+        r->texture_in_creation = snode;
+        LruNode *evicted = lru_try_evict_one(&r->texture_cache);
+        r->texture_in_creation = NULL;
+        if (!evicted) {
+            break;
+        }
+    }
 
     VkImageViewCreateInfo image_view_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1511,6 +1530,13 @@ static void texture_cache_release_node_resources(PGRAPHVkState *r, TextureBindin
     vmaDestroyImage(r->allocator, snode->image, snode->allocation);
     snode->image = VK_NULL_HANDLE;
     snode->allocation = VK_NULL_HANDLE;
+
+    if (r->texture_cache_bytes >= snode->allocation_size) {
+        r->texture_cache_bytes -= snode->allocation_size;
+    } else {
+        r->texture_cache_bytes = 0;
+    }
+    snode->allocation_size = 0;
 }
 
 static bool texture_cache_entry_pre_evict(Lru *lru, LruNode *node)
@@ -1565,6 +1591,26 @@ static void texture_cache_init(PGRAPHVkState *r)
     for (int i = 0; i < texture_cache_size; i++) {
         lru_add_free(&r->texture_cache, &r->texture_cache_entries[i].node);
     }
+    /* Size the budget from the device rather than assuming a desktop GPU: the
+     * heap on a unified memory board is small and shared with everything else
+     * on the system. */
+    VkPhysicalDeviceMemoryProperties mem_props;
+    vkGetPhysicalDeviceMemoryProperties(r->physical_device, &mem_props);
+    VkDeviceSize largest_heap = 0;
+    for (uint32_t i = 0; i < mem_props.memoryHeapCount; i++) {
+        if (mem_props.memoryHeaps[i].size > largest_heap) {
+            largest_heap = mem_props.memoryHeaps[i].size;
+        }
+    }
+    r->texture_cache_bytes = 0;
+    r->texture_cache_budget = largest_heap / 3;
+    if (r->texture_cache_budget < 64 * 1024 * 1024) {
+        r->texture_cache_budget = 64 * 1024 * 1024;
+    }
+    fprintf(stderr, "Texture cache budget: %zu MiB of %zu MiB heap\n",
+            (size_t)(r->texture_cache_budget / (1024 * 1024)),
+            (size_t)(largest_heap / (1024 * 1024)));
+
     r->texture_cache.init_node = texture_cache_entry_init;
     r->texture_cache.compare_nodes = texture_cache_entry_compare;
     r->texture_cache.pre_node_evict = texture_cache_entry_pre_evict;

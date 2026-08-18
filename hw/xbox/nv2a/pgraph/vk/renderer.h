@@ -216,6 +216,7 @@ typedef struct TextureBinding {
     VkImageLayout current_layout;
     VkImageView image_view;
     VmaAllocation allocation;
+    VkDeviceSize allocation_size;
     VkSampler sampler;
     bool possibly_dirty;
     uint64_t hash;
@@ -397,6 +398,11 @@ typedef struct PGRAPHVkState {
      * otherwise pass the eviction check and could be freed underneath us when
      * an allocation evicts to make room. */
     TextureBinding *texture_in_creation;
+    /* Cached texture memory in use, and the ceiling we trim back to. The cache
+     * is also bounded by entry count, but on a unified memory device the GPU
+     * runs out well before that limit. */
+    VkDeviceSize texture_cache_bytes;
+    VkDeviceSize texture_cache_budget;
     TextureBinding *texture_cache_entries;
     TextureBinding *texture_bindings[NV2A_MAX_TEXTURES];
     TextureBinding dummy_texture;
