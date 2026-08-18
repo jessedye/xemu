@@ -627,7 +627,16 @@ int pgraph_method(NV2AState *d, unsigned int subchannel,
 {
     int num_processed = 1;
 
-    XTRACE_COUNT("pgraph_method");
+    /* The guest submits only a few hundred methods before it stops, so log the
+     * first 300 in full: the tail of that list is what it was doing when it
+     * stalled. */
+    {
+        static unsigned long n;
+        if (++n <= 300) {
+            fprintf(stderr, "xtrace: method %lu ch=%u m=0x%x p=0x%x\n",
+                    n, subchannel, (unsigned)method, (unsigned)parameter);
+        }
+    }
 
     PGRAPHState *pg = &d->pgraph;
 
