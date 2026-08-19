@@ -843,9 +843,9 @@ static void vk_render_frame(struct xemu_console *scon)
 
     if (!present_ready && !present_failed) {
         VkInstance instance = (VkInstance)(uintptr_t)nv2a_get_vk_instance();
-        VkSurfaceKHR surface = VK_NULL_HANDLE;
+        VkSurfaceKHR surface = 0;
 
-        if (instance == VK_NULL_HANDLE) {
+        if (instance == NULL) {
             /* The renderer has not come up yet; try again next frame. */
             qatomic_set(&rendering, false);
             return;
