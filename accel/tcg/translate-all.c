@@ -344,6 +344,26 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tcg_ctx->addr_type = target_long_bits() == 32 ? TCG_TYPE_I32 : TCG_TYPE_I64;
     tcg_ctx->guest_mo = cpu->cc->tcg_ops->guest_default_memory_order;
 
+    /* Measurement experiment, never a default: drop the guest's memory-model
+     * fences from generated code. On a weakly-ordered host emulating x86,
+     * every guest load carries a dmb ishld and every store a dmb ish; other
+     * threads (renderer, audio) read guest RAM concurrently, so eliding them
+     * is UNSAFE and exists only to measure what the fences cost. */
+    {
+        static int weak_mo = -1;
+        if (weak_mo < 0) {
+            weak_mo = getenv("XEMU_WEAK_MO") != NULL;
+            if (weak_mo) {
+                fprintf(stderr,
+                        "tcg: UNSAFE experiment: guest memory-model fences "
+                        "elided (XEMU_WEAK_MO)\n");
+            }
+        }
+        if (weak_mo) {
+            tcg_ctx->guest_mo = 0;
+        }
+    }
+
  restart_translate:
     trace_translate_block(tb, s.pc, tb->tc.ptr);
 
