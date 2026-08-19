@@ -78,7 +78,11 @@ void pcrtc_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         /* A change of scanout address is a page flip, so counting distinct
          * values per second gives the guest's real frame rate -- which is not
          * the same as the rate the host presents at. */
-        if (getenv("XEMU_FPS")) {
+        static int fps_report = -1;
+        if (fps_report < 0) {
+            fps_report = getenv("XEMU_FPS") != NULL;
+        }
+        if (fps_report) {
             static uint32_t last_val = 0xFFFFFFFF;
             static int64_t window_start_ns;
             static unsigned flips;
