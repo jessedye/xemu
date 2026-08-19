@@ -330,6 +330,16 @@ bool pgraph_vk_present_frame(PGRAPHState *pg, int width, int height)
     };
     VK_CHECK(vkQueueSubmit(r->queue, 1, &submit_info, g_present.in_flight));
 
+    /* Record the frame the same way the OpenGL path does, so the two are
+     * directly comparable. There is no readback here, so the download and
+     * upload costs are zero by construction; the blit is charged as the
+     * present cost. */
+    if (pgraph_vk_perflog_enabled()) {
+        pgraph_vk_perflog_frame(0.0, 0.0, 0,
+                                g_present.extent.width,
+                                g_present.extent.height);
+    }
+
     VkPresentInfoKHR present_info = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
