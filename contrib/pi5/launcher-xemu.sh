@@ -19,12 +19,19 @@ export HOME=/home/pi
 # x86-TSO via acquire/release accesses in the TCG aarch64 backend: measured
 # p50 -10%, stutters -17% on Halo 2; soaked clean on GTA SA (native 60) and
 # Morrowind. Remove this line to fall back to fence-based ordering.
+# Vulkan swapchain presentation: without this the frame is read back through
+# guest memory and re-uploaded to GL every frame (5-14 ms measured in play).
+export XEMU_DISPLAY_BACKEND=vulkan
+
 export XEMU_TSO=1
 # Native-double x87 helpers in place of floatx80 softfloat: with this and TSO
 # together, Halo 2 reaches its native 30 flips/s (p99 -8%, 1% low +14%);
 # soaked clean on GTA SA (60.0) and Morrowind. Remove to fall back to the
 # bit-exact softfloat x87.
-export XEMU_HARD_FPU=1
+# 31 = all helper groups. A play session shipped with =1 ran only the
+# load/store group - the value is a bitmask, and lag reported in that session
+# traced straight to arithmetic still on softfloat.
+export XEMU_HARD_FPU=31
 export XDG_DATA_HOME=/home/pi/.local/share
 
 # Output at 1080p rather than the display native 4K. The Xbox renders at

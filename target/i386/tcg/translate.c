@@ -4246,8 +4246,12 @@ void tcg_x86_init(void)
         const char *e = getenv("XEMU_HARD_FPU");
         g_use_hard_fpu = 0;
         g_use_hard_fpu_helpers = e ? (int)strtol(e, NULL, 0) : 0;
-        if (e && g_use_hard_fpu_helpers == 0) {
-            g_use_hard_fpu_helpers = 31; /* bare or non-numeric: everything */
+        if (e && (g_use_hard_fpu_helpers == 0 ||
+                  g_use_hard_fpu_helpers == 1)) {
+            /* Bare, non-numeric or plain 1: everything. A session shipped
+             * with =1 silently ran only the load/store group. Bisecting a
+             * single group still works via 0x1. */
+            g_use_hard_fpu_helpers = 31;
         }
         if (g_use_hard_fpu_helpers) {
             fprintf(stderr, "x86-fpu: hard FPU helpers enabled, groups 0x%x "
