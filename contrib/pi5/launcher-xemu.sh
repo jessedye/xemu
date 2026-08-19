@@ -20,6 +20,11 @@ export HOME=/home/pi
 # p50 -10%, stutters -17% on Halo 2; soaked clean on GTA SA (native 60) and
 # Morrowind. Remove this line to fall back to fence-based ordering.
 export XEMU_TSO=1
+# Native-double x87 helpers in place of floatx80 softfloat: with this and TSO
+# together, Halo 2 reaches its native 30 flips/s (p99 -8%, 1% low +14%);
+# soaked clean on GTA SA (60.0) and Morrowind. Remove to fall back to the
+# bit-exact softfloat x87.
+export XEMU_HARD_FPU=1
 export XDG_DATA_HOME=/home/pi/.local/share
 
 # Output at 1080p rather than the display native 4K. The Xbox renders at
