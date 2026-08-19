@@ -216,6 +216,22 @@ void pgraph_vk_init_buffers(NV2AState *d)
         create_buffer(pg, &r->storage_buffers[i]);
     }
 
+    /* Report what was actually reserved. The requested sizes are large and get
+     * clamped against the device heap, so the figure that matters on a small
+     * board is this one, not the constant in the source. */
+    {
+        VkDeviceSize total = 0;
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            total += r->storage_buffers[i].buffer_size;
+        }
+        fprintf(stderr, "vk-buffers: reserved %zu MiB across %d buffers\n",
+                (size_t)(total / (1024 * 1024)), BUFFER_COUNT);
+        for (int i = 0; i < BUFFER_COUNT; i++) {
+            fprintf(stderr, "vk-buffers:   [%d] %zu MiB\n", i,
+                    (size_t)(r->storage_buffers[i].buffer_size / (1024 * 1024)));
+        }
+    }
+
     /* Several of these are used as a pair, with data copied from one into the
      * other, and each takes its size from its partner before anything is
      * allocated. If one of a pair ended up smaller because the device was short
