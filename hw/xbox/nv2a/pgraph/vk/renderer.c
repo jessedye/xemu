@@ -166,9 +166,34 @@ static void pgraph_vk_process_pending(NV2AState *d)
     }
 }
 
+/* Presenting only when the UI thread comes asking drops frames whenever this
+ * thread is buried in a long stretch of guest work: the guest, decoupled by
+ * the deferred flip wait, keeps flipping at its native rate while the screen
+ * sees just the flips that happen to coincide with a sync request. The flip
+ * stall is the natural pacing point - end of a guest frame, on the thread
+ * that owns the queue - so composite and present right here, once per flip.
+ * The reuse guards make the UI thread's own requests nearly free. */
+static bool pgraph_vk_present_on_flip(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("XEMU_PRESENT_ON_FLIP") != NULL;
+        if (cached) {
+            fprintf(stderr, "vk: presenting at guest flip time\n");
+        }
+    }
+    return cached == 1;
+}
+
 static void pgraph_vk_flip_stall(NV2AState *d)
 {
     pgraph_vk_finish(&d->pgraph, VK_FINISH_REASON_FLIP_STALL);
+
+    if (pgraph_vk_present_on_flip()) {
+        pgraph_vk_render_display(&d->pgraph);
+        pgraph_vk_present_frame(&d->pgraph);
+    }
+
     pgraph_vk_debug_frame_terminator();
 }
 
