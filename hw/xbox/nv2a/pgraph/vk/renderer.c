@@ -287,9 +287,24 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
 
     // The download is skipped unless the surface is flagged dirty, and the
     // flag is cleared once downloaded. Without interop we need current pixels
-    // in guest memory every frame, so request one each time.
+    // in guest memory, so ask for them -- but do not stall waiting. The work
+    // happens on the pfifo thread, and blocking here costs the scheduling
+    // round trip plus the GPU sync. If the pixels are not ready yet, present
+    // the texture from the previous frame: one frame of latency instead of a
+    // stall that was measured at a third of the frame budget.
     qatomic_set(&surface->draw_dirty, true);
-    pgraph_vk_wait_for_surface_download(surface);
+
+    if (!pgraph_vk_request_surface_download(surface)) {
+        if (g_display_tex) {
+            if (g_fps_report) {
+                XTRACE_SKIP("present_previous_frame");
+            }
+            return g_display_tex;
+        }
+        /* Nothing has ever been uploaded, so there is no previous frame to
+         * fall back on: wait this once to get the first image up. */
+        pgraph_vk_wait_for_surface_download(surface);
+    }
 
     if (timing) {
         t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
