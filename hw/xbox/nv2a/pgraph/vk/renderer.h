@@ -355,6 +355,12 @@ typedef struct PGRAPHVkState {
      * waiting for it. */
     VkQueryPool timestamp_pool;
     bool timestamps_recorded;
+
+    /* Set when a submission has been handed to the GPU but not yet waited
+     * for. The resources it uses stay reserved until the wait happens. */
+    bool submission_in_flight;
+    FinishReason in_flight_reason;
+    bool check_budget_on_wait;
     float timestamp_period_ns;
     bool in_aux_command_buffer;
 
@@ -616,6 +622,9 @@ typedef enum FinishReason {
 
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
 void pgraph_vk_perflog_gpu_busy(double busy_ms);
+
+// draw.c
+void pgraph_vk_wait_for_submission(PGRAPHState *pg);
 
 // draw.c
 void pgraph_vk_init_pipelines(PGRAPHState *pg);

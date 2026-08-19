@@ -1210,12 +1210,28 @@ const enum NV2A_PROF_COUNTERS_ENUM finish_reason_to_counter_enum[] = {
     [VK_FINISH_REASON_STALLED] = NV2A_PROF_FINISH_STALLED,
 };
 
+/* Deferring the flip-stall wait changes when the host blocks, so keep it
+ * selectable while its effect is being measured. */
+static bool pgraph_vk_defer_flip_wait(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("XEMU_ASYNC_FLIP") != NULL;
+        if (cached) {
+            fprintf(stderr, "vk: flip-stall wait deferred\n");
+        }
+    }
+    return cached == 1;
+}
+
 void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     assert(!r->in_draw);
     assert(r->debug_depth == 0);
+
+    pgraph_vk_wait_for_submission(pg);
 
     if (r->in_command_buffer) {
         nv2a_profile_inc_counter(finish_reason_to_counter_enum[finish_reason]);
@@ -1282,54 +1298,84 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
             check_budget = true;
         }
 
-        /* This is the emulation thread stopping dead until the GPU has
-         * finished everything submitted so far. Measure it: how often it
-         * happens is already counted, but only the cost says whether it
-         * matters. */
-        bool timing = pgraph_vk_perflog_enabled();
-        int64_t wait_start =
-            timing ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
-
-        VK_CHECK(vkWaitForFences(r->device, 1, &r->command_buffer_fence,
-                                 VK_TRUE, UINT64_MAX));
-
-        if (timing) {
-            int64_t waited =
-                qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - wait_start;
-            pgraph_vk_perflog_gpu_wait(finish_reason,
-                                       (double)waited / 1000000.0);
-        }
-
-        if (r->timestamps_recorded) {
-            uint64_t stamps[2] = { 0, 0 };
-            if (vkGetQueryPoolResults(r->device, r->timestamp_pool, 0, 2,
-                                      sizeof(stamps), stamps, sizeof(stamps[0]),
-                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS &&
-                stamps[1] > stamps[0]) {
-                pgraph_vk_perflog_gpu_busy((double)(stamps[1] - stamps[0]) *
-                                           r->timestamp_period_ns / 1000000.0);
-            }
-            r->timestamps_recorded = false;
-        }
-
-        r->descriptor_set_index = 0;
         r->in_command_buffer = false;
-        destroy_framebuffers(pg);
+        r->submission_in_flight = true;
+        r->in_flight_reason = finish_reason;
+        r->check_budget_on_wait = check_budget;
 
-        if (check_budget) {
-            pgraph_vk_check_memory_budget(pg);
+        /* A flip stall is the guest waiting for the display, not for data.
+         * Nothing on the host needs the result, so let the GPU drain while
+         * this thread carries on running the guest, and wait later when a
+         * resource is actually needed again. */
+        if (!(finish_reason == VK_FINISH_REASON_FLIP_STALL &&
+              pgraph_vk_defer_flip_wait())) {
+            pgraph_vk_wait_for_submission(pg);
         }
+    }
+
+    if (!r->submission_in_flight) {
+        NV2AState *d = container_of(pg, NV2AState, pgraph);
+        pgraph_vk_process_pending_reports_internal(d);
+        pgraph_vk_compute_finish_complete(r);
+    }
+}
+
+/* Block until the outstanding submission has completed, then release
+ * everything it was holding. Safe to call when nothing is outstanding. */
+void pgraph_vk_wait_for_submission(PGRAPHState *pg)
+{
+    PGRAPHVkState *r = pg->vk_renderer_state;
+
+    if (!r->submission_in_flight) {
+        return;
+    }
+
+    bool timing = pgraph_vk_perflog_enabled();
+    int64_t wait_start = timing ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
+
+    VK_CHECK(vkWaitForFences(r->device, 1, &r->command_buffer_fence, VK_TRUE,
+                             UINT64_MAX));
+
+    if (timing) {
+        int64_t waited = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - wait_start;
+        pgraph_vk_perflog_gpu_wait(r->in_flight_reason,
+                                   (double)waited / 1000000.0);
+    }
+
+    if (r->timestamps_recorded) {
+        uint64_t stamps[2] = { 0, 0 };
+        if (vkGetQueryPoolResults(r->device, r->timestamp_pool, 0, 2,
+                                  sizeof(stamps), stamps, sizeof(stamps[0]),
+                                  VK_QUERY_RESULT_64_BIT) == VK_SUCCESS &&
+            stamps[1] > stamps[0]) {
+            pgraph_vk_perflog_gpu_busy((double)(stamps[1] - stamps[0]) *
+                                       r->timestamp_period_ns / 1000000.0);
+        }
+        r->timestamps_recorded = false;
+    }
+
+    r->descriptor_set_index = 0;
+    r->submission_in_flight = false;
+    destroy_framebuffers(pg);
+
+    if (r->check_budget_on_wait) {
+        r->check_budget_on_wait = false;
+        pgraph_vk_check_memory_budget(pg);
     }
 
     NV2AState *d = container_of(pg, NV2AState, pgraph);
     pgraph_vk_process_pending_reports_internal(d);
-
     pgraph_vk_compute_finish_complete(r);
 }
 
 void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
+
+    /* The command buffer and its descriptor sets belong to the outstanding
+     * submission until it completes. */
+    pgraph_vk_wait_for_submission(pg);
+
     assert(!r->in_command_buffer);
 
     VkCommandBufferBeginInfo command_buffer_begin_info = {
