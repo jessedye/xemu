@@ -1371,11 +1371,6 @@ void pgraph_vk_wait_for_submission(PGRAPHState *pg)
 void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
-
-    /* The command buffer and its descriptor sets belong to the outstanding
-     * submission until it completes. */
-    pgraph_vk_wait_for_submission(pg);
-
     assert(!r->in_command_buffer);
 
     VkCommandBufferBeginInfo command_buffer_begin_info = {
@@ -1441,6 +1436,11 @@ void pgraph_vk_end_nondraw_commands(PGRAPHState *pg, VkCommandBuffer cmd)
 static void begin_pre_draw(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
+
+    /* Reclaim the previous submission before anything below allocates a
+     * framebuffer or a descriptor set: those belong to it until it has
+     * completed, and reclaiming later would free what was just allocated. */
+    pgraph_vk_wait_for_submission(pg);
 
     assert(r->color_binding || r->zeta_binding);
     assert(!r->color_binding || r->color_binding->initialized);
