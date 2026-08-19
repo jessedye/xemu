@@ -1087,6 +1087,11 @@ static void destroy_dummy_texture(PGRAPHVkState *r)
 
 static void set_texture_label(PGRAPHState *pg, TextureBinding *texture)
 {
+    if (texture->allocation == VK_NULL_HANDLE) {
+        /* Aliases borrow the surface's image and own no allocation. */
+        return;
+    }
+
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     g_autofree gchar *label = g_strdup_printf(
