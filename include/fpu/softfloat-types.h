@@ -109,18 +109,6 @@ typedef struct {
         long double fval;
     };
 } floatx80;
-#elif defined(XBOX) && defined(__aarch64__)
-/* No 80-bit long double here, so the native value is a distinct double and
- * the hard-FPU code keeps low/high coherent with it explicitly wherever a
- * value is produced. Anything that reads the 80-bit fields (fxam, fprem,
- * savestates, FSAVE images) then keeps working unchanged. */
-typedef struct {
-    struct {
-        uint64_t low;
-        uint16_t high;
-    };
-    double fval;
-} floatx80;
 #else
 typedef struct {
     uint64_t low;
