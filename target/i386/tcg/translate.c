@@ -36,6 +36,12 @@
 #include "exec/log.h"
 
 static int g_use_hard_fpu;
+/* Which helper variants to use, as a group bitmask. Distinct from
+ * g_use_hard_fpu, which selects the inline TCG-FP tier that only backends
+ * with FP opcode support can execute: on a host without that support the
+ * native-double __hard helpers are usable on their own, with the inline
+ * tier left off. On x86-64 the two switch together, as before. */
+static int g_use_hard_fpu_helpers;
 
 #if defined(XBOX) && (defined(__x86_64__) || defined(__aarch64__))
 #include "ui/xemu-settings.h"
@@ -43,8 +49,8 @@ static int g_use_hard_fpu;
  * be bisected at runtime: 1 loads/stores/moves, 2 arithmetic, 4 compares
  * and control, 8 transcendental and remainder, 16 environment/save. */
 #define MAP_GEN_HELPER_SOFT_HARD_G(name, grp) \
-    ((g_use_hard_fpu & (grp)) ? gen_helper_##name##__hard \
-                              : gen_helper_##name##__soft)
+    ((g_use_hard_fpu_helpers & (grp)) ? gen_helper_##name##__hard \
+                                      : gen_helper_##name##__soft)
 #define gen_helper_flds_FT0       MAP_GEN_HELPER_SOFT_HARD_G(flds_FT0, 1)
 #define gen_helper_fldl_FT0       MAP_GEN_HELPER_SOFT_HARD_G(fldl_FT0, 1)
 #define gen_helper_fildl_FT0      MAP_GEN_HELPER_SOFT_HARD_G(fildl_FT0, 1)
@@ -4233,21 +4239,24 @@ void tcg_x86_init(void)
 
 #if defined(XBOX) && (defined(__x86_64__) || defined(__aarch64__))
 #if defined(__aarch64__)
-    /* Opt-in while the port is being validated; the x86-64 host keeps its
-     * config-driven behaviour unchanged. */
+    /* No FP opcode support in this TCG backend, so the inline tier must
+     * stay off; the native-double helpers carry the whole win. Opt-in while
+     * the port is validated. */
     {
         const char *e = getenv("XEMU_HARD_FPU");
-        g_use_hard_fpu = e ? (int)strtol(e, NULL, 0) : 0;
-        if (e && g_use_hard_fpu == 0) {
-            g_use_hard_fpu = 31;    /* bare or non-numeric: everything */
+        g_use_hard_fpu = 0;
+        g_use_hard_fpu_helpers = e ? (int)strtol(e, NULL, 0) : 0;
+        if (e && g_use_hard_fpu_helpers == 0) {
+            g_use_hard_fpu_helpers = 31; /* bare or non-numeric: everything */
         }
-        if (g_use_hard_fpu) {
-            fprintf(stderr, "x86-fpu: hard FPU enabled, groups 0x%x "
-                    "(XEMU_HARD_FPU)\n", g_use_hard_fpu);
+        if (g_use_hard_fpu_helpers) {
+            fprintf(stderr, "x86-fpu: hard FPU helpers enabled, groups 0x%x "
+                    "(XEMU_HARD_FPU)\n", g_use_hard_fpu_helpers);
         }
     }
 #else
     g_use_hard_fpu = g_config.perf.hard_fpu;
+    g_use_hard_fpu_helpers = g_use_hard_fpu ? 31 : 0;
 #endif
 #endif
 }
