@@ -170,18 +170,6 @@ void pgraph_vk_perflog_init(void)
             path, g_perflog.stutter_ms);
 }
 
-static const char *const k_finish_reason_names[VK_NUM_FINISH_REASONS] = {
-    [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] = "vertex_buffer_dirty",
-    [VK_FINISH_REASON_SURFACE_CREATE] = "surface_create",
-    [VK_FINISH_REASON_SURFACE_DOWN] = "surface_down",
-    [VK_FINISH_REASON_NEED_BUFFER_SPACE] = "need_buffer_space",
-    [VK_FINISH_REASON_FRAMEBUFFER_DIRTY] = "framebuffer_dirty",
-    [VK_FINISH_REASON_PRESENTING] = "presenting",
-    [VK_FINISH_REASON_FLIP_STALL] = "flip_stall",
-    [VK_FINISH_REASON_FLUSH] = "flush",
-    [VK_FINISH_REASON_STALLED] = "stalled",
-};
-
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms)
 {
     if (!g_perflog.enabled || why >= VK_NUM_FINISH_REASONS) {
@@ -194,6 +182,18 @@ bool pgraph_vk_perflog_enabled(void)
 {
     return g_perflog.enabled;
 }
+
+static const char *const k_finish_reason_names[VK_NUM_FINISH_REASONS] = {
+    [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] = "vertex_buffer_dirty",
+    [VK_FINISH_REASON_SURFACE_CREATE] = "surface_create",
+    [VK_FINISH_REASON_SURFACE_DOWN] = "surface_down",
+    [VK_FINISH_REASON_NEED_BUFFER_SPACE] = "need_buffer_space",
+    [VK_FINISH_REASON_FRAMEBUFFER_DIRTY] = "framebuffer_dirty",
+    [VK_FINISH_REASON_PRESENTING] = "presenting",
+    [VK_FINISH_REASON_FLIP_STALL] = "flip_stall",
+    [VK_FINISH_REASON_FLUSH] = "flush",
+    [VK_FINISH_REASON_STALLED] = "stalled",
+};
 
 static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
                                  unsigned width, unsigned height)
