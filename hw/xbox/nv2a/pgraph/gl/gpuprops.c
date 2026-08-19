@@ -123,6 +123,15 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
     GLuint geom_shader = compile_shader(GL_GEOMETRY_SHADER, geom_source);
     GLuint frag_shader = compile_shader(GL_FRAGMENT_SHADER, frag_source);
     if (!vert_shader || !geom_shader || !frag_shader) {
+        if (vert_shader) {
+            glDeleteShader(vert_shader);
+        }
+        if (geom_shader) {
+            glDeleteShader(geom_shader);
+        }
+        if (frag_shader) {
+            glDeleteShader(frag_shader);
+        }
         return 0;
     }
 
@@ -131,6 +140,10 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
     glAttachShader(shader_prog, geom_shader);
     glAttachShader(shader_prog, frag_shader);
     glLinkProgram(shader_prog);
+
+    glDeleteShader(vert_shader);
+    glDeleteShader(geom_shader);
+    glDeleteShader(frag_shader);
 
     GLint success;
     glGetProgramiv(shader_prog, GL_LINK_STATUS, &success);
@@ -142,10 +155,6 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
         glDeleteProgram(shader_prog);
         return 0;
     }
-
-    glDeleteShader(vert_shader);
-    glDeleteShader(geom_shader);
-    glDeleteShader(frag_shader);
 
     return shader_prog;
 }
@@ -350,10 +359,11 @@ void pgraph_gl_determine_gpu_properties(void)
 
     uint8_t *pixels = render_geom_shader_triangles(width, height);
     if (pixels == NULL) {
-        fprintf(stderr,
-                "GL geometry shader probe unavailable; using defaults\n");
+        fprintf(stderr, "GL geometry shader probe failed\n");
+        pgraph_gl_gpu_properties.valid = false;
         return;
     }
+    pgraph_gl_gpu_properties.valid = true;
 
     determine_triangle_winding_order(pixels, width, height,
                                      &pgraph_gl_gpu_properties);
