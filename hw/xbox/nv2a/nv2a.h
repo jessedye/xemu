@@ -23,6 +23,7 @@
 
 void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram);
 void nv2a_context_init(void);
+void nv2a_context_init_current(void);
 int nv2a_get_framebuffer_surface(void);
 bool nv2a_framebuffer_is_top_down(void);
 void nv2a_release_framebuffer_surface(void);

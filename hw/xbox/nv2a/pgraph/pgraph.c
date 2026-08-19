@@ -292,6 +292,27 @@ void nv2a_context_init(void)
     }
 }
 
+/* Initialise only the renderer that will actually be used.
+ *
+ * The loop above prepares every renderer so the menu can switch between them
+ * at run time, but that means the OpenGL renderer creates contexts even when
+ * it will never draw. Where there is no OpenGL context to create them in, this
+ * initialises the configured renderer alone. */
+void nv2a_context_init_current(void)
+{
+    if (!renderers[g_config.display.renderer]) {
+        g_config.display.renderer = get_default_renderer();
+        fprintf(stderr,
+                "Warning: Configured renderer unavailable. Switching to %s.\n",
+                renderers[g_config.display.renderer]->name);
+    }
+
+    const PGRAPHRenderer *r = renderers[g_config.display.renderer];
+    if (r->ops.early_context_init) {
+        r->ops.early_context_init();
+    }
+}
+
 static bool attempt_renderer_init(PGRAPHState *pg)
 {
     NV2AState *d = container_of(pg, NV2AState, pgraph);

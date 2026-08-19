@@ -1165,10 +1165,12 @@ static void display_very_early_init(DisplayOptions *o)
         fprintf(stderr, "GL_SHADING_LANGUAGE_VERSION: %s\n",
                 glGetString(GL_SHADING_LANGUAGE_VERSION));
 
-        /* The offscreen context exists for the OpenGL renderer; the Vulkan
-         * renderer creates its own device and needs nothing here. */
         nv2a_context_init();
         SDL_GL_MakeCurrent(NULL, NULL);
+    } else {
+        /* Preparing every renderer would have the OpenGL one create contexts
+         * that cannot exist here, so prepare only the configured renderer. */
+        nv2a_context_init_current();
     }
 }
 
