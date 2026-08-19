@@ -1277,8 +1277,23 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
             check_budget = true;
         }
 
+        /* This is the emulation thread stopping dead until the GPU has
+         * finished everything submitted so far. Measure it: how often it
+         * happens is already counted, but only the cost says whether it
+         * matters. */
+        bool timing = pgraph_vk_perflog_enabled();
+        int64_t wait_start =
+            timing ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
+
         VK_CHECK(vkWaitForFences(r->device, 1, &r->command_buffer_fence,
                                  VK_TRUE, UINT64_MAX));
+
+        if (timing) {
+            int64_t waited =
+                qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - wait_start;
+            pgraph_vk_perflog_gpu_wait(finish_reason,
+                                       (double)waited / 1000000.0);
+        }
 
         r->descriptor_set_index = 0;
         r->in_command_buffer = false;

@@ -97,6 +97,9 @@ static struct {
     /* accumulated over the window */
     double download_ms;
     double upload_ms;
+    /* Wall time the emulation thread spent blocked waiting for the GPU,
+     * separated by the reason the pipeline had to be drained. */
+    double gpu_wait_ms[VK_NUM_FINISH_REASONS];
     unsigned stutters;
 
     unsigned long stutter_lines;
@@ -155,8 +158,36 @@ void pgraph_vk_perflog_init(void)
         fprintf(g_perflog.f, " %s", k_counters[i].name);
     }
     fprintf(g_perflog.f, "\n");
+
+    /* Wall time per frame the emulation thread spent blocked on the GPU,
+     * split by what forced the pipeline to drain. */
+    fprintf(g_perflog.f, "# gpu_wait_ms (per frame):");
+    for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
+        fprintf(g_perflog.f, " %s", k_finish_reason_names[i]);
+    }
+    fprintf(g_perflog.f, "\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
+}
+
+static const char *const k_finish_reason_names[VK_NUM_FINISH_REASONS] = {
+    [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] = "vertex_buffer_dirty",
+    [VK_FINISH_REASON_SURFACE_CREATE] = "surface_create",
+    [VK_FINISH_REASON_SURFACE_DOWN] = "surface_down",
+    [VK_FINISH_REASON_NEED_BUFFER_SPACE] = "need_buffer_space",
+    [VK_FINISH_REASON_FRAMEBUFFER_DIRTY] = "framebuffer_dirty",
+    [VK_FINISH_REASON_PRESENTING] = "presenting",
+    [VK_FINISH_REASON_FLIP_STALL] = "flip_stall",
+    [VK_FINISH_REASON_FLUSH] = "flush",
+    [VK_FINISH_REASON_STALLED] = "stalled",
+};
+
+void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms)
+{
+    if (!g_perflog.enabled || why >= VK_NUM_FINISH_REASONS) {
+        return;
+    }
+    g_perflog.gpu_wait_ms[why] += wait_ms;
 }
 
 bool pgraph_vk_perflog_enabled(void)
@@ -220,6 +251,9 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     for (unsigned i = 0; i < NUM_COUNTERS; i++) {
         fprintf(g_perflog.f, ",%.2f", (double)g_perflog.counters[i] / n);
     }
+    for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
+        fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_wait_ms[i] / n);
+    }
     fprintf(g_perflog.f, "\n");
 
     if (g_perflog.dropped_samples) {
@@ -234,6 +268,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     g_perflog.upload_ms = 0;
     g_perflog.stutters = 0;
     memset(g_perflog.counters, 0, sizeof(g_perflog.counters));
+    memset(g_perflog.gpu_wait_ms, 0, sizeof(g_perflog.gpu_wait_ms));
     g_perflog.window_start_ns = now;
 }
 

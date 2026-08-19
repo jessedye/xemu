@@ -572,6 +572,7 @@ void pgraph_vk_perflog_frame(double download_ms, double upload_ms,
                              uint64_t tex_bytes, unsigned width,
                              unsigned height);
 void pgraph_vk_perflog_event(const char *what, double cost_ms);
+void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
 
 void pgraph_vk_init_textures(PGRAPHState *pg);
 void pgraph_vk_finalize_textures(PGRAPHState *pg);
@@ -604,6 +605,7 @@ typedef enum FinishReason {
     VK_FINISH_REASON_FLIP_STALL,
     VK_FINISH_REASON_FLUSH,
     VK_FINISH_REASON_STALLED,
+    VK_NUM_FINISH_REASONS,
 } FinishReason;
 
 // draw.c
