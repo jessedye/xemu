@@ -167,6 +167,14 @@ void pgraph_vk_update_descriptor_sets(PGRAPHState *pg)
         (r->descriptor_set_index >= ARRAY_SIZE(r->descriptor_sets));
 
     if (need_descriptor_write_reset || need_ubo_staging_buffer_reset) {
+        /* One reason code, two different pools; count them apart so the
+         * exhausted one can be identified from a log. */
+        if (need_descriptor_write_reset) {
+            nv2a_profile_inc_counter(NV2A_PROF_NBS_DESCRIPTOR_SETS);
+        }
+        if (need_ubo_staging_buffer_reset) {
+            nv2a_profile_inc_counter(NV2A_PROF_NBS_UNIFORM_STAGING);
+        }
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
         need_uniform_write = true;
     }

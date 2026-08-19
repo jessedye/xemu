@@ -623,6 +623,7 @@ void pgraph_vk_process_pending_reports_internal(NV2AState *d);
 
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
 void pgraph_vk_perflog_gpu_busy(double busy_ms);
+void pgraph_vk_perflog_aux_wait(double wait_ms);
 
 // draw.c
 void pgraph_vk_wait_for_submission(PGRAPHState *pg);

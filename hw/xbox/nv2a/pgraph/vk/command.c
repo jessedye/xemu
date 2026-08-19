@@ -113,8 +113,14 @@ void pgraph_vk_end_single_time_commands(PGRAPHState *pg, VkCommandBuffer cmd)
     VK_CHECK(vkQueueSubmit(r->queue, 1, &submit_info,
                            r->aux_command_buffer_fence));
     nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_AUX);
+    bool timing = pgraph_vk_perflog_enabled();
+    int64_t wait_start = timing ? qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : 0;
     VK_CHECK(vkWaitForFences(r->device, 1, &r->aux_command_buffer_fence,
                              VK_TRUE, UINT64_MAX));
+    if (timing) {
+        int64_t waited = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - wait_start;
+        pgraph_vk_perflog_aux_wait((double)waited / 1000000.0);
+    }
 
     r->in_aux_command_buffer = false;
 }

@@ -182,6 +182,7 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
         r->submission_in_flight) {
         pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_DOWN);
     } else if (compute_needs_finish) {
+        nv2a_profile_inc_counter(NV2A_PROF_NBS_COMPUTE_SURF);
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
     }
 

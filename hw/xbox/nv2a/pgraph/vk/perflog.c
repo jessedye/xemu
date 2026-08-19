@@ -47,6 +47,23 @@ static const struct {
     { NV2A_PROF_FINISH_PRESENTING,   "fin_presenting" },
     { NV2A_PROF_FINISH_STALLED,      "fin_stalled" },
     { NV2A_PROF_FINISH_NEED_BUFFER_SPACE, "fin_buffer_space" },
+    /* Which pool actually ran out; fin_buffer_space only says one did. */
+    { NV2A_PROF_NBS_UNIFORM_STAGING,  "nbs_uniform" },
+    { NV2A_PROF_NBS_DESCRIPTOR_SETS,  "nbs_descriptors" },
+    { NV2A_PROF_NBS_FRAMEBUFFERS,     "nbs_framebuffers" },
+    { NV2A_PROF_NBS_INLINE_STAGING,   "nbs_inline" },
+    { NV2A_PROF_NBS_COMPUTE_TEX,      "nbs_compute_tex" },
+    { NV2A_PROF_NBS_COMPUTE_SURF,     "nbs_compute_surf" },
+    /* Render-pass structure: on a tiled GPU every pass boundary is a full
+     * tile store and reload, so churn here is GPU time. */
+    { NV2A_PROF_PIPELINE_RENDERPASSES, "renderpasses" },
+    { NV2A_PROF_PIPELINE_BIND,        "pipeline_bind" },
+    { NV2A_PROF_CLEAR,                "clears" },
+    { NV2A_PROF_QUERY,                "queries" },
+    { NV2A_PROF_SURF_TO_TEX,          "surf_to_tex" },
+    { NV2A_PROF_SURF_UPLOAD,          "surf_upload" },
+    { NV2A_PROF_SURF_DOWNLOAD,        "surf_download" },
+    { NV2A_PROF_SURF_SWIZZLE,         "surf_swizzle" },
 };
 #define NUM_COUNTERS ARRAY_SIZE(k_counters)
 
@@ -100,6 +117,9 @@ static struct {
     /* Wall time the emulation thread spent blocked waiting for the GPU,
      * separated by the reason the pipeline had to be drained. */
     double gpu_wait_ms[VK_NUM_FINISH_REASONS];
+    /* Fence waits on auxiliary one-shot submissions (uploads, copies,
+     * display); previously invisible, hidden inside plain host time. */
+    double aux_wait_ms;
     /* Time the GPU spent executing, as reported by the GPU itself. */
     double gpu_busy_ms;
     unsigned stutters;
@@ -180,9 +200,16 @@ void pgraph_vk_perflog_init(void)
     for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
         fprintf(g_perflog.f, " %s", k_finish_reason_names[i]);
     }
-    fprintf(g_perflog.f, "\n");
+    fprintf(g_perflog.f, " aux_fence\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
+}
+
+void pgraph_vk_perflog_aux_wait(double wait_ms)
+{
+    if (g_perflog.enabled) {
+        g_perflog.aux_wait_ms += wait_ms;
+    }
 }
 
 void pgraph_vk_perflog_gpu_busy(double busy_ms)
@@ -266,6 +293,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
         fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_wait_ms[i] / n);
     }
+    fprintf(g_perflog.f, ",%.2f", g_perflog.aux_wait_ms / n);
     fprintf(g_perflog.f, "\n");
 
     if (g_perflog.dropped_samples) {
@@ -282,6 +310,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     memset(g_perflog.counters, 0, sizeof(g_perflog.counters));
     memset(g_perflog.gpu_wait_ms, 0, sizeof(g_perflog.gpu_wait_ms));
     g_perflog.gpu_busy_ms = 0;
+    g_perflog.aux_wait_ms = 0;
     g_perflog.window_start_ns = now;
 }
 

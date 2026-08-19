@@ -655,6 +655,7 @@ static void copy_zeta_surface_to_texture(PGRAPHState *pg, SurfaceBinding *surfac
     bool compute_needs_finish = use_compute_to_convert_depth_stencil &&
                                 pgraph_vk_compute_needs_finish(r);
     if (compute_needs_finish) {
+        nv2a_profile_inc_counter(NV2A_PROF_NBS_COMPUTE_TEX);
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
     }
 

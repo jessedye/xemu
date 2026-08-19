@@ -380,6 +380,7 @@ static void create_frame_buffer(PGRAPHState *pg)
     assert(r->color_binding || r->zeta_binding);
 
     if (r->framebuffer_index >= ARRAY_SIZE(r->framebuffers)) {
+        nv2a_profile_inc_counter(NV2A_PROF_NBS_FRAMEBUFFERS);
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
     }
 
@@ -1231,6 +1232,12 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
     assert(!r->in_draw);
     assert(r->debug_depth == 0);
 
+    /* Count the finish while a submission is merely deferred as well: it
+     * still settles real work, and skipping it undercounted every reason. */
+    if (!r->in_command_buffer && r->submission_in_flight) {
+        nv2a_profile_inc_counter(finish_reason_to_counter_enum[finish_reason]);
+    }
+
     pgraph_vk_wait_for_submission(pg);
 
     if (r->in_command_buffer) {
@@ -1950,6 +1957,7 @@ void pgraph_vk_set_surface_dirty(PGRAPHState *pg, bool color, bool zeta)
 static bool ensure_buffer_space(PGRAPHState *pg, int index, VkDeviceSize size)
 {
     if (!pgraph_vk_buffer_has_space_for(pg, index, size, 1)) {
+        nv2a_profile_inc_counter(NV2A_PROF_NBS_INLINE_STAGING);
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);
         return true;
     }
