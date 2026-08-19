@@ -394,7 +394,11 @@ typedef struct PGRAPHVkState {
 
     VkDescriptorPool descriptor_pool;
     VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorSet descriptor_sets[1024];
+    /* At ~700 draw batches per frame a 1024-set pool exhausts every frame
+     * or two, and each exhaustion drains the whole pipeline (~17 ms
+     * measured). 4096 sets push that to every few frames; the counters that
+     * confirmed the pool (nbs_descriptors) will confirm the change. */
+    VkDescriptorSet descriptor_sets[4096];
     int descriptor_set_index;
 
     StorageBuffer storage_buffers[BUFFER_COUNT];
