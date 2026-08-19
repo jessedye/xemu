@@ -394,11 +394,13 @@ typedef struct PGRAPHVkState {
 
     VkDescriptorPool descriptor_pool;
     VkDescriptorSetLayout descriptor_set_layout;
-    /* At ~700 draw batches per frame a 1024-set pool exhausts every frame
-     * or two, and each exhaustion drains the whole pipeline (~17 ms
-     * measured). 4096 sets push that to every few frames; the counters that
-     * confirmed the pool (nbs_descriptors) will confirm the change. */
-    VkDescriptorSet descriptor_sets[4096];
+    /* Sized deliberately: 4096 sets were tried against the measured ~17 ms
+     * exhaustion drains and eliminated them (nbs_descriptors 0.185 -> 0),
+     * but total wait was conserved - the drains moved to the flip and
+     * vertex-overlap settle points as fewer, larger submissions - and frame
+     * p99 regressed 19%. Smaller submissions drain more often but more
+     * evenly, which is the better tail on this GPU. */
+    VkDescriptorSet descriptor_sets[1024];
     int descriptor_set_index;
 
     StorageBuffer storage_buffers[BUFFER_COUNT];
