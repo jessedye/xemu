@@ -30,6 +30,15 @@ static const struct {
     { NV2A_PROF_SHADER_GEN,          "shader_gen" },
     { NV2A_PROF_PIPELINE_GEN,        "pipeline_gen" },
     { NV2A_PROF_QUEUE_SUBMIT,        "queue_submit" },
+    /* Auxiliary submissions, each a separate GPU round trip on top of the
+     * frame's own submit. Broken out so it is clear which of them is worth
+     * folding into the main command buffer. */
+    { NV2A_PROF_QUEUE_SUBMIT_AUX,    "submit_aux_total" },
+    { NV2A_PROF_QUEUE_SUBMIT_1,      "submit_surface_create" },
+    { NV2A_PROF_QUEUE_SUBMIT_2,      "submit_surface_copy" },
+    { NV2A_PROF_QUEUE_SUBMIT_3,      "submit_surface_down" },
+    { NV2A_PROF_QUEUE_SUBMIT_4,      "submit_texture_upload" },
+    { NV2A_PROF_QUEUE_SUBMIT_5,      "submit_display" },
     { NV2A_PROF_DRAW_ARRAYS,         "draw_arrays" },
     { NV2A_PROF_BEGIN_ENDS,          "begin_ends" },
     { NV2A_PROF_TEX_UPLOAD,          "tex_upload" },
