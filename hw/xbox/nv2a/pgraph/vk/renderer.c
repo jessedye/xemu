@@ -292,43 +292,17 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     // round trip plus the GPU sync. If the pixels are not ready yet, present
     // the texture from the previous frame: one frame of latency instead of a
     // stall that was measured at a third of the frame budget.
+    // The download is skipped unless the surface is flagged dirty, and the
+    // flag is cleared once downloaded. Without interop we need current pixels
+    // in guest memory every frame, so request one each time.
+    //
+    // A non-blocking variant was tried here: request the download and present
+    // the previous frame rather than waiting. It removed the download cost
+    // entirely but cut the frame rate from 16.6 to 6.3 fps, because asking
+    // every other frame defeats the unchanged-surface reuse below and keeps
+    // the pfifo thread synchronising constantly. Measured, not assumed.
     qatomic_set(&surface->draw_dirty, true);
-
-    /* Alternate between asking for a download and consuming the one that has
-     * finished. Requesting every frame and always returning early would never
-     * upload anything after the first frame. */
-    static bool download_in_flight;
-
-    if (download_in_flight) {
-        if (qatomic_read(&r->downloads_pending)) {
-            /* Still working: show the frame we already have rather than
-             * blocking the UI thread on the pfifo thread. */
-            if (g_display_tex) {
-                if (g_fps_report) {
-                    XTRACE_SKIP("present_previous_frame");
-                }
-                qatomic_set(&surface->draw_dirty, false);
-                return g_display_tex;
-            }
-            /* No previous frame exists yet, so wait once to get one up. */
-            pgraph_vk_wait_for_surface_download(surface);
-        }
-        download_in_flight = false;
-        /* fall through and upload the pixels that just arrived */
-    } else {
-        pgraph_vk_request_surface_download(surface);
-        download_in_flight = true;
-
-        if (g_display_tex) {
-            if (g_fps_report) {
-                XTRACE_SKIP("present_previous_frame");
-            }
-            return g_display_tex;
-        }
-        /* First frame of the session: nothing to fall back on. */
-        pgraph_vk_wait_for_surface_download(surface);
-        download_in_flight = false;
-    }
+    pgraph_vk_wait_for_surface_download(surface);
 
     if (timing) {
         t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
