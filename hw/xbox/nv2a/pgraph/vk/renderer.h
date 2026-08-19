@@ -446,7 +446,7 @@ VkInstance pgraph_vk_get_instance(PGRAPHState *pg);
 bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
                             int height);
 void pgraph_vk_present_finalize(PGRAPHState *pg);
-bool pgraph_vk_present_frame(PGRAPHState *pg, int width, int height);
+bool pgraph_vk_present_frame(PGRAPHState *pg);
 
 // renderer.c
 void pgraph_vk_check_memory_budget(PGRAPHState *pg);

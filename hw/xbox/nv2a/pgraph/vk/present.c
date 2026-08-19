@@ -27,6 +27,11 @@ typedef struct PresentState {
     uint32_t num_images;
     VkImage *images;
 
+    /* Window size, published by the UI thread and read by the pgraph thread
+     * when it presents. */
+    int window_width;
+    int window_height;
+
     VkSemaphore image_available;
     VkSemaphore render_finished;
     VkFence in_flight;
@@ -241,8 +246,11 @@ static void transition(VkCommandBuffer cmd, VkImage image,
                          NULL, 1, &barrier);
 }
 
-bool pgraph_vk_present_frame(PGRAPHState *pg, int width, int height)
+bool pgraph_vk_present_frame(PGRAPHState *pg)
 {
+    int width = g_present.window_width;
+    int height = g_present.window_height;
+
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     if (!g_present.initialized || !r->display.image) {
@@ -372,8 +380,16 @@ bool nv2a_present_frame(int width, int height)
     NV2AState *d = g_nv2a;
     PGRAPHState *pg = &d->pgraph;
 
-    /* Ask the pgraph thread to composite the frame, exactly as the OpenGL
-     * interop path does, then present the image it produced. */
+    if (!g_present.initialized) {
+        return false;
+    }
+
+    g_present.window_width = width;
+    g_present.window_height = height;
+
+    /* Ask the pgraph thread to composite and present. The compositing and the
+     * present are both queue submissions, and a VkQueue cannot be used from
+     * two threads at once, so this thread only waits for the result. */
     qemu_mutex_lock(&d->pfifo.lock);
     qemu_event_reset(&pg->sync_complete);
     qatomic_set(&pg->sync_pending, true);
@@ -381,7 +397,7 @@ bool nv2a_present_frame(int width, int height)
     qemu_mutex_unlock(&d->pfifo.lock);
     qemu_event_wait(&pg->sync_complete);
 
-    return pgraph_vk_present_frame(pg, width, height);
+    return true;
 }
 
 void nv2a_present_finalize(void)
