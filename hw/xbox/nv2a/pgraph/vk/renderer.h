@@ -319,6 +319,19 @@ typedef struct PGRAPHVkComputeState {
     ComputePipeline *pipeline_cache_entries;
 } PGRAPHVkComputeState;
 
+typedef enum FinishReason {
+    VK_FINISH_REASON_VERTEX_BUFFER_DIRTY,
+    VK_FINISH_REASON_SURFACE_CREATE,
+    VK_FINISH_REASON_SURFACE_DOWN,
+    VK_FINISH_REASON_NEED_BUFFER_SPACE,
+    VK_FINISH_REASON_FRAMEBUFFER_DIRTY,
+    VK_FINISH_REASON_PRESENTING,
+    VK_FINISH_REASON_FLIP_STALL,
+    VK_FINISH_REASON_FLUSH,
+    VK_FINISH_REASON_STALLED,
+    VK_NUM_FINISH_REASONS,
+} FinishReason;
+
 typedef struct PGRAPHVkState {
     uint32_t vk_api_version;
     VkInstance instance;
@@ -607,18 +620,6 @@ void pgraph_vk_get_report(NV2AState *d, uint32_t parameter);
 void pgraph_vk_process_pending_reports(NV2AState *d);
 void pgraph_vk_process_pending_reports_internal(NV2AState *d);
 
-typedef enum FinishReason {
-    VK_FINISH_REASON_VERTEX_BUFFER_DIRTY,
-    VK_FINISH_REASON_SURFACE_CREATE,
-    VK_FINISH_REASON_SURFACE_DOWN,
-    VK_FINISH_REASON_NEED_BUFFER_SPACE,
-    VK_FINISH_REASON_FRAMEBUFFER_DIRTY,
-    VK_FINISH_REASON_PRESENTING,
-    VK_FINISH_REASON_FLIP_STALL,
-    VK_FINISH_REASON_FLUSH,
-    VK_FINISH_REASON_STALLED,
-    VK_NUM_FINISH_REASONS,
-} FinishReason;
 
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
 void pgraph_vk_perflog_gpu_busy(double busy_ms);
