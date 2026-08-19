@@ -364,6 +364,29 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         }
     }
 
+#ifdef __aarch64__
+    /* Guest TSO via acquire/release accesses instead of per-access fences.
+     * The measured fence cost on a Cortex-A76 was ~25% of throughput; this
+     * keeps the ordering the fences provided, so unlike XEMU_WEAK_MO it is a
+     * candidate for shipping once validated. Host-gated: only the aarch64
+     * backend emits the ordered forms. */
+    {
+        static int tso = -1;
+        if (tso < 0) {
+            tso = getenv("XEMU_TSO") != NULL;
+            if (tso) {
+                fprintf(stderr,
+                        "tcg: guest TSO via acquire/release accesses "
+                        "(XEMU_TSO)\n");
+            }
+        }
+        if (tso) {
+            tcg_qemu_tso_lowering = true;
+            tcg_ctx->guest_mo = 0;
+        }
+    }
+#endif
+
  restart_translate:
     trace_translate_block(tb, s.pc, tb->tc.ptr);
 
