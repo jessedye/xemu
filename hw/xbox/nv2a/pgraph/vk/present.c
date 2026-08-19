@@ -338,3 +338,39 @@ bool pgraph_vk_present_frame(PGRAPHState *pg, int width, int height)
 
     return true;
 }
+
+/* Public entry points. These bridge the UI's opaque handles to the renderer
+ * state, keeping Vulkan types out of the interface between the two. */
+
+uint64_t nv2a_get_vk_instance(void)
+{
+    return (uint64_t)(uintptr_t)pgraph_vk_get_instance(&g_nv2a->pgraph);
+}
+
+bool nv2a_present_init(uint64_t vk_surface, int width, int height)
+{
+    return pgraph_vk_present_init(&g_nv2a->pgraph,
+                                  (VkSurfaceKHR)vk_surface, width, height);
+}
+
+bool nv2a_present_frame(int width, int height)
+{
+    NV2AState *d = g_nv2a;
+    PGRAPHState *pg = &d->pgraph;
+
+    /* Ask the pgraph thread to composite the frame, exactly as the OpenGL
+     * interop path does, then present the image it produced. */
+    qemu_mutex_lock(&d->pfifo.lock);
+    qemu_event_reset(&pg->sync_complete);
+    qatomic_set(&pg->sync_pending, true);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+    qemu_event_wait(&pg->sync_complete);
+
+    return pgraph_vk_present_frame(pg, width, height);
+}
+
+void nv2a_present_finalize(void)
+{
+    pgraph_vk_present_finalize(&g_nv2a->pgraph);
+}

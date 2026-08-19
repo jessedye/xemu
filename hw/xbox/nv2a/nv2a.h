@@ -31,4 +31,17 @@ unsigned int nv2a_get_surface_scale_factor(void);
 const uint8_t *nv2a_get_dac_palette(void);
 int nv2a_get_screen_off(void);
 
+/* Vulkan presentation backend.
+ *
+ * The UI creates the surface from its own window and hands it over here, so
+ * this header needs no Vulkan types and the UI needs no Vulkan headers beyond
+ * the declarations SDL already provides. The handles are carried as integers
+ * because a Vulkan surface is a 64-bit handle rather than a pointer on 32-bit
+ * hosts. Every one of these is a no-op returning false unless the build has
+ * Vulkan and the Vulkan presentation backend is selected. */
+uint64_t nv2a_get_vk_instance(void);
+bool nv2a_present_init(uint64_t vk_surface, int width, int height);
+bool nv2a_present_frame(int width, int height);
+void nv2a_present_finalize(void);
+
 #endif

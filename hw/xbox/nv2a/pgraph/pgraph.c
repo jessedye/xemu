@@ -374,6 +374,29 @@ bool nv2a_framebuffer_is_top_down(void)
     return top_down;
 }
 
+#ifndef CONFIG_VULKAN
+/* Without a Vulkan build there is no swapchain to present through, so the UI
+ * keeps to its OpenGL path. The real versions live in pgraph/vk/present.c. */
+uint64_t nv2a_get_vk_instance(void)
+{
+    return 0;
+}
+
+bool nv2a_present_init(uint64_t vk_surface, int width, int height)
+{
+    return false;
+}
+
+bool nv2a_present_frame(int width, int height)
+{
+    return false;
+}
+
+void nv2a_present_finalize(void)
+{
+}
+#endif
+
 int nv2a_get_framebuffer_surface(void)
 {
     NV2AState *d = g_nv2a;

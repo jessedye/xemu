@@ -59,6 +59,7 @@
 #include <locale.h>
 #include <math.h>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 #ifndef DEBUG_XEMU_C
 #define DEBUG_XEMU_C 0
@@ -824,6 +825,51 @@ static void report_stats(void)
  * Renders the main interface. Usually called from the main thread,
  * but may sometimes be called from another thread.
  */
+/* Present through the Vulkan swapchain. The renderer composites the frame into
+ * a VkImage and blits it straight to the swapchain, so unlike the OpenGL path
+ * there is no readback through guest memory and no GL texture upload. */
+static void vk_render_frame(struct xemu_console *scon)
+{
+    static bool rendering;
+    if (qatomic_xchg(&rendering, true) || qatomic_read(&qemu_exiting)) {
+        return;
+    }
+
+    static bool present_ready;
+    static bool present_failed;
+
+    int width = 0, height = 0;
+    SDL_GetWindowSizeInPixels(scon->real_window, &width, &height);
+
+    if (!present_ready && !present_failed) {
+        VkInstance instance = (VkInstance)(uintptr_t)nv2a_get_vk_instance();
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+        if (instance == VK_NULL_HANDLE) {
+            /* The renderer has not come up yet; try again next frame. */
+            qatomic_set(&rendering, false);
+            return;
+        }
+
+        if (!SDL_Vulkan_CreateSurface(scon->real_window, instance, NULL,
+                                      &surface)) {
+            fprintf(stderr, "display: could not create a Vulkan surface: %s\n",
+                    SDL_GetError());
+            present_failed = true;
+        } else if (!nv2a_present_init((uint64_t)surface, width, height)) {
+            present_failed = true;
+        } else {
+            present_ready = true;
+        }
+    }
+
+    if (present_ready) {
+        nv2a_present_frame(width, height);
+    }
+
+    qatomic_set(&rendering, false);
+}
+
 static void gl_render_frame(struct xemu_console *scon)
 {
     static bool rendering;
@@ -902,7 +948,11 @@ static bool event_watch_callback(void *userdata, SDL_Event *event)
 
     if (event->type == SDL_EVENT_WINDOW_EXPOSED ||
         event->type == SDL_EVENT_WINDOW_RESIZED) {
-        gl_render_frame(scon);
+        if (xemu_display_backend_is_vulkan()) {
+            vk_render_frame(scon);
+        } else {
+            gl_render_frame(scon);
+        }
     }
 
     return true; // Ignored
@@ -1122,9 +1172,13 @@ static void display_early_init(DisplayOptions *o)
     assert(o->type == DISPLAY_TYPE_XEMU);
     display_opengl = 1;
 
-    SDL_GL_MakeCurrent(m_window, m_context);
-    SDL_GL_SetSwapInterval(g_config.display.window.vsync ? 1 : 0);
-    xemu_hud_init(m_window, m_context);
+    if (!xemu_display_backend_is_vulkan()) {
+        SDL_GL_MakeCurrent(m_window, m_context);
+        SDL_GL_SetSwapInterval(g_config.display.window.vsync ? 1 : 0);
+        /* The overlay is drawn by the OpenGL ImGui backend, so it is not
+         * available yet when presenting through the swapchain. */
+        xemu_hud_init(m_window, m_context);
+    }
 }
 
 static const DisplayChangeListenerOps dcl_gl_ops = {
@@ -1141,7 +1195,9 @@ static void display_init(DisplayState *ds, DisplayOptions *o)
     int i;
 
     assert(o->type == DISPLAY_TYPE_XEMU);
-    SDL_GL_MakeCurrent(m_window, m_context);
+    if (!xemu_display_backend_is_vulkan()) {
+        SDL_GL_MakeCurrent(m_window, m_context);
+    }
 
     gui_fullscreen = o->has_full_screen && o->full_screen;
     gui_fullscreen |= g_config.display.window.fullscreen_on_startup;
@@ -1208,8 +1264,12 @@ static void display_finalize(void)
     }
 
     SDL_RemoveEventWatch(event_watch_callback, &scon_list[0]);
-    SDL_GL_MakeCurrent(NULL, NULL);
-    SDL_GL_DestroyContext(m_context);
+    if (xemu_display_backend_is_vulkan()) {
+        nv2a_present_finalize();
+    } else {
+        SDL_GL_MakeCurrent(NULL, NULL);
+        SDL_GL_DestroyContext(m_context);
+    }
     SDL_DestroyWindow(m_window);
     SDL_Quit();
 }
@@ -1398,7 +1458,11 @@ int main(int argc, char **argv)
     struct xemu_console *scon = &scon_list[0];
     while (!qatomic_read(&qemu_exiting)) {
         poll_events(scon);
-        gl_render_frame(scon);
+        if (xemu_display_backend_is_vulkan()) {
+            vk_render_frame(scon);
+        } else {
+            gl_render_frame(scon);
+        }
     }
     qemu_sem_post(&display_shutdown_sem);
     qemu_thread_join(&thread);
