@@ -294,16 +294,40 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     // stall that was measured at a third of the frame budget.
     qatomic_set(&surface->draw_dirty, true);
 
-    if (!pgraph_vk_request_surface_download(surface)) {
+    /* Alternate between asking for a download and consuming the one that has
+     * finished. Requesting every frame and always returning early would never
+     * upload anything after the first frame. */
+    static bool download_in_flight;
+
+    if (download_in_flight) {
+        if (qatomic_read(&r->downloads_pending)) {
+            /* Still working: show the frame we already have rather than
+             * blocking the UI thread on the pfifo thread. */
+            if (g_display_tex) {
+                if (g_fps_report) {
+                    XTRACE_SKIP("present_previous_frame");
+                }
+                qatomic_set(&surface->draw_dirty, false);
+                return g_display_tex;
+            }
+            /* No previous frame exists yet, so wait once to get one up. */
+            pgraph_vk_wait_for_surface_download(surface);
+        }
+        download_in_flight = false;
+        /* fall through and upload the pixels that just arrived */
+    } else {
+        pgraph_vk_request_surface_download(surface);
+        download_in_flight = true;
+
         if (g_display_tex) {
             if (g_fps_report) {
                 XTRACE_SKIP("present_previous_frame");
             }
             return g_display_tex;
         }
-        /* Nothing has ever been uploaded, so there is no previous frame to
-         * fall back on: wait this once to get the first image up. */
+        /* First frame of the session: nothing to fall back on. */
         pgraph_vk_wait_for_surface_download(surface);
+        download_in_flight = false;
     }
 
     if (timing) {
