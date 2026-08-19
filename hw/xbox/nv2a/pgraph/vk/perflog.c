@@ -24,9 +24,12 @@
  * about 300, so this is sized with headroom and never allocates. */
 #define PERFLOG_MAX_SAMPLES 1024
 
-/* A frame taking longer than this is a stutter worth recording individually.
- * 33.4 ms is two 60 Hz refreshes: anything beyond that is visible. */
-#define PERFLOG_STUTTER_MS 33.4
+/* A frame slower than this is recorded individually. The default has to sit
+ * above the frame time a title actually targets, or every frame of a 30 fps
+ * game (33.3 ms) is flagged and the signal is lost in its own noise. 50 ms is
+ * comfortably past both 60 and 30 fps while still catching a visible hitch.
+ * Override with XEMU_PERFLOG_STUTTER_MS. */
+#define PERFLOG_DEFAULT_STUTTER_MS 50.0
 
 /* Stop writing individual slow-frame lines after this many, so a sustained bad
  * patch cannot fill the disk. The summaries continue regardless. */
@@ -50,6 +53,7 @@ static struct {
 
     unsigned long stutter_lines;
     unsigned long window_index;
+    double stutter_ms;
 } g_perflog;
 
 static int cmp_double(const void *a, const void *b)
@@ -75,6 +79,15 @@ void pgraph_vk_perflog_init(void)
     g_perflog.enabled = true;
     setvbuf(g_perflog.f, NULL, _IOLBF, 0);
 
+    g_perflog.stutter_ms = PERFLOG_DEFAULT_STUTTER_MS;
+    const char *thresh = getenv("XEMU_PERFLOG_STUTTER_MS");
+    if (thresh && thresh[0]) {
+        double v = atof(thresh);
+        if (v > 0) {
+            g_perflog.stutter_ms = v;
+        }
+    }
+
     fprintf(g_perflog.f,
             "# xemu frame timing log\n"
             "# kind=window: elapsed_s,frames,fps,frame_ms_avg,frame_ms_p50,"
@@ -83,7 +96,8 @@ void pgraph_vk_perflog_init(void)
             "# kind=stutter: elapsed_s,frame_ms,download_ms,upload_ms,"
             "tex_cache_mb,resolution\n"
             "kind,elapsed_s,a,b,c,d,e,f,g,h,i,j\n");
-    fprintf(stderr, "perflog: writing frame timings to %s\n", path);
+    fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
+            path, g_perflog.stutter_ms);
 }
 
 bool pgraph_vk_perflog_enabled(void)
@@ -174,7 +188,7 @@ void pgraph_vk_perflog_frame(double download_ms, double upload_ms,
     g_perflog.download_ms += download_ms;
     g_perflog.upload_ms += upload_ms;
 
-    if (frame_ms > PERFLOG_STUTTER_MS) {
+    if (frame_ms > g_perflog.stutter_ms) {
         g_perflog.stutters++;
         if (g_perflog.stutter_lines < PERFLOG_MAX_STUTTER_LINES) {
             g_perflog.stutter_lines++;
