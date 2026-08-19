@@ -123,15 +123,9 @@ static GLuint create_program(const char *vert_source, const char *geom_source,
     GLuint geom_shader = compile_shader(GL_GEOMETRY_SHADER, geom_source);
     GLuint frag_shader = compile_shader(GL_FRAGMENT_SHADER, frag_source);
     if (!vert_shader || !geom_shader || !frag_shader) {
-        if (vert_shader) {
-            glDeleteShader(vert_shader);
-        }
-        if (geom_shader) {
-            glDeleteShader(geom_shader);
-        }
-        if (frag_shader) {
-            glDeleteShader(frag_shader);
-        }
+        glDeleteShader(vert_shader);
+        glDeleteShader(geom_shader);
+        glDeleteShader(frag_shader);
         return 0;
     }
 
