@@ -139,8 +139,12 @@ bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
 
     g_present.surface = surface;
 
+    QueueFamilyIndices indices =
+        pgraph_vk_find_queue_families(r->physical_device);
+
     VkBool32 supported = VK_FALSE;
-    vkGetPhysicalDeviceSurfaceSupportKHR(r->physical_device, r->queue_family,
+    vkGetPhysicalDeviceSurfaceSupportKHR(r->physical_device,
+                                         indices.queue_family,
                                          g_present.surface, &supported);
     if (!supported) {
         fprintf(stderr,
@@ -172,7 +176,7 @@ bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
     VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = r->queue_family,
+        .queueFamilyIndex = indices.queue_family,
     };
     VK_CHECK(vkCreateCommandPool(r->device, &pool_info, NULL,
                                  &g_present.command_pool));
