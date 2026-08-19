@@ -70,5 +70,26 @@ within noise. The serialisation was real but not rate-limiting.
 
 The frame is paced by the TCG vCPU thread. GPU-side and renderer-side work
 target components at 32-35% duty; the guest-CPU thread at 87.5% is where
-frame time now lives. Next: profile inside that thread (perf) before touching
-any TCG code.
+frame time now lives.
+
+**Update (row 12, measured):** perf on the TCG thread (30 s @ 997 Hz,
+`-perfmap`, symbols >= 0.4%):
+
+```
+ 10.4%  helper_lookup_tb_ptr        TB chaining / indirect-branch lookup
+  2.3%  tlb_reset_dirty_range_all   dirty-page tracking
+ ~8.5%  x87 softfloat               floatx80_mul/addsub, fsts/flds/fmul helpers
+ ~5.4%  SSE FP helpers              mulss/mulps/addps/comiss + soft_f32_mul
+ ~4.5%  exec machinery              cpu_exec_loop, tb_lookup_cmp, tlb_set_page
+ ~69%   JIT-generated code + tail   guest code itself, incl. inline TSO fences
+```
+
+Reads on the roadmap gates: FP helper share is ~14% visible at the 0.4%
+cutoff (x87 alone ~8.5%) — borderline for the L1 hard-FPU GO gate (>=15-20%),
+with more FP certainly in the tail. `soft_f32_mul` appearing at all means the
+float32 hardfloat fast path is falling through — worth checking whether the
+guest sets FTZ/DAZ, which disables QEMU's hardfloat. `helper_lookup_tb_ptr`
+at 10.4% is the single largest symbol and was on nobody's roadmap: indirect
+branches missing the TB jump cache. The ~69% JIT tail is where M6's per-load
+`dmb ishld` fences live, invisible to symbol profiling — only the elision A/B
+can size them.
