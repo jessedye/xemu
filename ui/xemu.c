@@ -112,6 +112,30 @@ static SDL_Cursor *guest_sprite;
 static Notifier mouse_mode_notifier;
 static SDL_Window *m_window;
 static SDL_GLContext m_context;
+
+/* Presentation backend. The OpenGL path remains the default everywhere. On a
+ * device whose Vulkan driver cannot export images to OpenGL -- V3D on the
+ * Raspberry Pi, for instance -- the frame has to be read back through guest
+ * memory to be displayed, which costs roughly a quarter of the frame budget.
+ * Selecting the Vulkan backend presents the image the NV2A renderer already
+ * composited, without that round trip.
+ *
+ * Opt in with XEMU_DISPLAY_BACKEND=vulkan so the default behaviour is
+ * unchanged while the path is being brought up. */
+static bool xemu_display_backend_is_vulkan(void)
+{
+    static int cached = -1;
+
+    if (cached < 0) {
+        const char *choice = getenv("XEMU_DISPLAY_BACKEND");
+        cached = (choice && !strcmp(choice, "vulkan")) ? 1 : 0;
+        if (cached) {
+            fprintf(stderr, "display: using the Vulkan presentation backend\n");
+        }
+    }
+
+    return cached == 1;
+}
 static QemuSemaphore display_init_sem;
 static QemuSemaphore display_shutdown_sem;
 static QEMUTimer *vblank_timer;
@@ -1023,7 +1047,10 @@ static void display_very_early_init(DisplayOptions *o)
         window_height = min_window_height;
     }
 
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_WindowFlags backend_flag = xemu_display_backend_is_vulkan() ?
+                                       SDL_WINDOW_VULKAN :
+                                       SDL_WINDOW_OPENGL;
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(backend_flag | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
     // Create main window
     m_window = SDL_CreateWindow(
