@@ -1157,14 +1157,19 @@ static void display_very_early_init(DisplayOptions *o)
 
     fprintf(stderr, "CPU: %s\n", xemu_get_cpu_info());
     fprintf(stderr, "OS_Version: %s\n", xemu_get_os_info());
-    fprintf(stderr, "GL_VENDOR: %s\n", glGetString(GL_VENDOR));
-    fprintf(stderr, "GL_RENDERER: %s\n", glGetString(GL_RENDERER));
-    fprintf(stderr, "GL_VERSION: %s\n", glGetString(GL_VERSION));
-    fprintf(stderr, "GL_SHADING_LANGUAGE_VERSION: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
-    // Initialize offscreen rendering context now
-    nv2a_context_init();
-    SDL_GL_MakeCurrent(NULL, NULL);
+    if (!xemu_display_backend_is_vulkan()) {
+        fprintf(stderr, "GL_VENDOR: %s\n", glGetString(GL_VENDOR));
+        fprintf(stderr, "GL_RENDERER: %s\n", glGetString(GL_RENDERER));
+        fprintf(stderr, "GL_VERSION: %s\n", glGetString(GL_VERSION));
+        fprintf(stderr, "GL_SHADING_LANGUAGE_VERSION: %s\n",
+                glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+        /* The offscreen context exists for the OpenGL renderer; the Vulkan
+         * renderer creates its own device and needs nothing here. */
+        nv2a_context_init();
+        SDL_GL_MakeCurrent(NULL, NULL);
+    }
 }
 
 static void display_early_init(DisplayOptions *o)
