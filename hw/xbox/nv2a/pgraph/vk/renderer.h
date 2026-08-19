@@ -369,6 +369,11 @@ typedef struct PGRAPHVkState {
     VkQueryPool timestamp_pool;
     bool timestamps_recorded;
 
+    /* Color surfaces live in VK_IMAGE_LAYOUT_GENERAL so they can be sampled
+     * directly as textures without copies or transition choreography; on
+     * this tiler, layouts carry no cost. Off by default. */
+    bool surface_general_layout;
+
     /* Set when a submission has been handed to the GPU but not yet waited
      * for. The resources it uses stay reserved until the wait happens. */
     bool submission_in_flight;
@@ -633,6 +638,13 @@ void pgraph_vk_perflog_aux_wait(double wait_ms);
 
 // draw.c
 void pgraph_vk_wait_for_submission(PGRAPHState *pg);
+
+static inline VkImageLayout
+pgraph_vk_color_surface_layout(PGRAPHVkState *r)
+{
+    return r->surface_general_layout ? VK_IMAGE_LAYOUT_GENERAL :
+                                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+}
 
 // draw.c
 void pgraph_vk_init_pipelines(PGRAPHState *pg);

@@ -272,11 +272,11 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .initialLayout = pgraph_vk_color_surface_layout(r),
+            .finalLayout = pgraph_vk_color_surface_layout(r),
         };
         color_reference = (VkAttachmentReference){
-            num_attachments, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+            num_attachments, pgraph_vk_color_surface_layout(r)
         };
         num_attachments++;
     }

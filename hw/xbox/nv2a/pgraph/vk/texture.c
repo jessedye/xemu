@@ -874,7 +874,7 @@ static void copy_surface_to_texture(PGRAPHState *pg, SurfaceBinding *surface,
 
     pgraph_vk_transition_image_layout(
         pg, cmd, surface->image, surface->host_fmt.vk_format,
-        surface->color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+        surface->color ? pgraph_vk_color_surface_layout(r) :
                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
@@ -901,7 +901,7 @@ static void copy_surface_to_texture(PGRAPHState *pg, SurfaceBinding *surface,
     pgraph_vk_transition_image_layout(
         pg, cmd, surface->image, surface->host_fmt.vk_format,
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        surface->color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+        surface->color ? pgraph_vk_color_surface_layout(r) :
                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     pgraph_vk_transition_image_layout(pg, cmd, texture->image, vkf.vk_format,

@@ -54,6 +54,12 @@ static void pgraph_vk_init(NV2AState *d, Error **errp)
     PGRAPHState *pg = &d->pgraph;
 
     pg->vk_renderer_state = (PGRAPHVkState *)g_malloc0(sizeof(PGRAPHVkState));
+    pg->vk_renderer_state->surface_general_layout =
+        getenv("XEMU_SURF_TEX_SAMPLE") != NULL;
+    if (pg->vk_renderer_state->surface_general_layout) {
+        fprintf(stderr, "vk: color surfaces in GENERAL layout for direct "
+                        "sampling\n");
+    }
 
 #if HAVE_EXTERNAL_MEMORY
     glo_set_current(g_gl_context);

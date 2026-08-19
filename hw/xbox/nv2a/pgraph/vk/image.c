@@ -64,7 +64,18 @@ void pgraph_vk_transition_image_layout(PGRAPHState *pg, VkCommandBuffer cmd,
     VkPipelineStageFlags destinationStage;
 
     // Undefined -> Dst
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+
+    if (oldLayout == VK_IMAGE_LAYOUT_GENERAL ||
+        newLayout == VK_IMAGE_LAYOUT_GENERAL) {
+        /* Surfaces held in GENERAL for direct sampling: any barrier in or
+         * out is a full hazard barrier. These sites run a handful of times
+         * per frame, so the over-synchronization is cheap. */
+        barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        barrier.dstAccessMask =
+            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        sourceStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        destinationStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    } else    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
         newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
