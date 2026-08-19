@@ -55,7 +55,20 @@ ideal CPU/GPU overlap    max(26.9, 17.7) ~= 27 ms  => ~37 fps ceiling
 Host wait ~= GPU busy: the pipeline is serialised (record -> submit -> wait).
 
 **Update (row 10):** removing half the host wait (20.4 -> 10.2 ms) left fps
-within noise. The serialisation was real but not rate-limiting: the frame is
-paced by something outside the pgraph thread's fence waits — per-thread CPU
-sampling (below, when measured) decides whether that is the TCG vCPU thread
-or pgraph's own per-draw work (~710 batches/frame).
+within noise. The serialisation was real but not rate-limiting.
+
+**Update (row 11, measured):** per-thread CPU during live gameplay
+(vk + async flip, named via `-name xemu,debug-threads=on`):
+
+```
+  87.5%  CPU_0/TCG        <- guest CPU emulation: the wall
+  35.0%  renderer (pfifo/pgraph, all Vulkan work)
+   7.4%  mcpx.apu_thread
+   1.4%  vblank-timer
+ total  185% of 400% available (two cores idle)
+```
+
+The frame is paced by the TCG vCPU thread. GPU-side and renderer-side work
+target components at 32-35% duty; the guest-CPU thread at 87.5% is where
+frame time now lives. Next: profile inside that thread (perf) before touching
+any TCG code.
