@@ -177,8 +177,9 @@ static void download_surface_to_buffer(NV2AState *d, SurfaceBinding *surface,
     bool compute_needs_finish = (use_compute_to_convert_depth_stencil_format &&
                                  pgraph_vk_compute_needs_finish(r));
 
-    if (r->in_command_buffer &&
-        surface->draw_time >= r->command_buffer_start_time) {
+    if ((r->in_command_buffer &&
+         surface->draw_time >= r->command_buffer_start_time) ||
+        r->submission_in_flight) {
         pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_DOWN);
     } else if (compute_needs_finish) {
         pgraph_vk_finish(pg, VK_FINISH_REASON_NEED_BUFFER_SPACE);

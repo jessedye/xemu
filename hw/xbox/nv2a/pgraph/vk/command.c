@@ -74,6 +74,12 @@ VkCommandBuffer pgraph_vk_begin_single_time_commands(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
+    /* The aux command buffer was part of the outstanding submission; it must
+     * not be re-begun while the GPU may still be executing it. No-op when
+     * nothing is outstanding, and safe here because callers have not
+     * allocated per-submission resources yet. */
+    pgraph_vk_wait_for_submission(pg);
+
     assert(!r->in_aux_command_buffer);
     r->in_aux_command_buffer = true;
 

@@ -1371,6 +1371,13 @@ void pgraph_vk_wait_for_submission(PGRAPHState *pg)
 void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
+
+    /* The command buffer, descriptor sets and staging offsets belong to the
+     * outstanding submission until it completes. The draw path has already
+     * settled it at the top of begin_pre_draw, before allocating anything for
+     * the next draw; this covers every other entry point. */
+    pgraph_vk_wait_for_submission(pg);
+
     assert(!r->in_command_buffer);
 
     VkCommandBufferBeginInfo command_buffer_begin_info = {

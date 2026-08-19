@@ -49,6 +49,12 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
 
     pgraph_vk_download_surfaces_in_range_if_dirty(pg, offset, size);
 
+    /* The mirror is persistently mapped and bound directly by in-flight
+     * draws, and the uploaded bitmap was cleared when they were submitted, so
+     * it cannot say whether an outstanding submission still reads these
+     * pages. Settle the submission before touching the memory. */
+    pgraph_vk_wait_for_submission(pg);
+
     size_t start_bit = offset / TARGET_PAGE_SIZE;
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
