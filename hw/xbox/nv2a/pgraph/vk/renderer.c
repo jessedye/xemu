@@ -42,6 +42,7 @@ static bool g_fps_report;
 static void early_context_init(void)
 {
     g_fps_report = getenv("XEMU_FPS") != NULL;
+    pgraph_vk_perflog_init();
 
 #if HAVE_EXTERNAL_MEMORY
     g_gl_context = glo_context_create();
@@ -279,7 +280,8 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
      * the host refresh rate, which is faster than the guest produces frames,
      * so this is where redundant work would show up. */
     int64_t t0 = 0, t1 = 0, t2 = 0;
-    if (g_fps_report) {
+    bool timing = g_fps_report || pgraph_vk_perflog_enabled();
+    if (timing) {
         t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     }
 
@@ -289,7 +291,7 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     qatomic_set(&surface->draw_dirty, true);
     pgraph_vk_wait_for_surface_download(surface);
 
-    if (g_fps_report) {
+    if (timing) {
         t1 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     }
 
@@ -312,6 +314,14 @@ static int pgraph_vk_get_framebuffer_surface(NV2AState *d)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, surface->width, surface->height, 0,
                  GL_BGRA, GL_UNSIGNED_BYTE, d->vram_ptr + surface->vram_addr);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+    if (pgraph_vk_perflog_enabled()) {
+        int64_t tp = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+        pgraph_vk_perflog_frame((double)(t1 - t0) / 1000000.0,
+                                (double)(tp - t1) / 1000000.0,
+                                r->texture_cache_bytes, surface->width,
+                                surface->height);
+    }
 
     if (g_fps_report) {
         static int64_t win_ns, dl_ns, ul_ns;

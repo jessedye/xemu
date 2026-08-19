@@ -67,6 +67,9 @@ VkResult pgraph_vk_create_image_evicting(PGRAPHVkState *r,
                     evicted, n, result);
             next *= 10;
         }
+        /* Eviction stalls the frame it happens on, so put it on the timeline
+         * to explain an isolated hitch. */
+        pgraph_vk_perflog_event("texture_eviction", (double)evicted);
     }
 
     return result;

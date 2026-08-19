@@ -557,6 +557,13 @@ VkResult pgraph_vk_create_image_evicting(PGRAPHVkState *r,
                                          const VkImageCreateInfo *image_info,
                                          const VmaAllocationCreateInfo *alloc_info,
                                          VkImage *image, VmaAllocation *allocation);
+void pgraph_vk_perflog_init(void);
+bool pgraph_vk_perflog_enabled(void);
+void pgraph_vk_perflog_frame(double download_ms, double upload_ms,
+                             uint64_t tex_bytes, unsigned width,
+                             unsigned height);
+void pgraph_vk_perflog_event(const char *what, double cost_ms);
+
 void pgraph_vk_init_textures(PGRAPHState *pg);
 void pgraph_vk_finalize_textures(PGRAPHState *pg);
 void pgraph_vk_bind_textures(NV2AState *d);
