@@ -3449,6 +3449,26 @@ void update_mxcsr_status(CPUX86State *env)
     uint32_t mxcsr = env->mxcsr;
     int rnd_type;
 
+    /* A non-nearest rounding mode disables the softfloat hardfloat fast
+     * path permanently, which is invisible from outside; log the control
+     * bits once per distinct value so a capture of a game session answers
+     * it. Gated on the same switch as the frame-rate trace. */
+    {
+        static int report = -1;
+        static uint32_t last_ctrl = 0xFFFFFFFF;
+        if (report < 0) {
+            report = getenv("XEMU_FPS") != NULL;
+        }
+        /* RC bits 13-14, FTZ bit 15, DAZ bit 6. */
+        uint32_t ctrl = mxcsr & ((3 << 13) | (1 << 15) | (1 << 6));
+        if (report && ctrl != last_ctrl) {
+            last_ctrl = ctrl;
+            fprintf(stderr,
+                    "x86-fpu: mxcsr=0x%04x rc=%u ftz=%u daz=%u\n", mxcsr,
+                    (mxcsr >> 13) & 3, (mxcsr >> 15) & 1, (mxcsr >> 6) & 1);
+        }
+    }
+
     /* set rounding mode */
     rnd_type = (mxcsr & SSE_RC_MASK) >> SSE_RC_SHIFT;
     set_x86_rounding_mode(rnd_type, &env->sse_status);
