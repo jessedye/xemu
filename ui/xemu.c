@@ -1180,9 +1180,11 @@ static void display_early_init(DisplayOptions *o)
     if (!xemu_display_backend_is_vulkan()) {
         SDL_GL_MakeCurrent(m_window, m_context);
         SDL_GL_SetSwapInterval(g_config.display.window.vsync ? 1 : 0);
-        /* The overlay is drawn by the OpenGL ImGui backend, so it is not
-         * available yet when presenting through the swapchain. */
         xemu_hud_init(m_window, m_context);
+    } else {
+        /* The overlay needs the OpenGL ImGui backend, so it is unavailable on
+         * this path, but input handling still expects an ImGui context. */
+        xemu_hud_init_input_only(m_window);
     }
 }
 

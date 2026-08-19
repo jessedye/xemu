@@ -41,6 +41,7 @@ void xemu_main_loop_unlock(void);
 
 // Implemented in xemu_hud.cc
 void xemu_hud_init(SDL_Window *window, void *sdl_gl_context);
+void xemu_hud_init_input_only(SDL_Window *window);
 void xemu_hud_cleanup(void);
 void xemu_hud_update(void);
 void xemu_hud_render(void);

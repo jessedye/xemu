@@ -128,12 +128,15 @@ static void InitializeStyle()
     g_base_style = s;
 }
 
-void xemu_hud_init(SDL_Window* window, void* sdl_gl_context)
+static void xemu_hud_init_common(SDL_Window *window, void *sdl_gl_context,
+                                 bool with_gl_renderer)
 {
     xemu_monitor_init();
     g_vsync = g_config.display.window.vsync;
 
-    InitCustomRendering();
+    if (with_gl_renderer) {
+        InitCustomRendering();
+    }
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -144,8 +147,12 @@ void xemu_hud_init(SDL_Window* window, void* sdl_gl_context)
     io.IniFilename = NULL;
 
     // Setup Platform/Renderer bindings
-    ImGui_ImplSDL3_InitForOpenGL(window, sdl_gl_context);
-    ImGui_ImplOpenGL3_Init("#version 140");
+    if (with_gl_renderer) {
+        ImGui_ImplSDL3_InitForOpenGL(window, sdl_gl_context);
+        ImGui_ImplOpenGL3_Init("#version 140");
+    } else {
+        ImGui_ImplSDL3_InitForVulkan(window);
+    }
     ImPlot::CreateContext();
 
 #if defined(_WIN32)
@@ -159,9 +166,33 @@ void xemu_hud_init(SDL_Window* window, void* sdl_gl_context)
     first_boot_window.is_open = g_config.general.show_welcome;
 }
 
+static bool g_hud_has_gl_renderer;
+
+void xemu_hud_init(SDL_Window *window, void *sdl_gl_context)
+{
+    xemu_hud_init_common(window, sdl_gl_context, true);
+    g_hud_has_gl_renderer = true;
+}
+
+/* Bring ImGui up without a rendering backend.
+ *
+ * The overlay is drawn by the OpenGL ImGui backend, so it cannot be shown when
+ * presenting through the Vulkan swapchain. The rest of the UI still expects a
+ * live ImGui context though: event handling and input capture both call into
+ * it. Create the context and the platform binding, and leave the renderer
+ * binding and the GL-backed controller artwork out. Nothing calls NewFrame on
+ * this path, so no font texture is needed. */
+void xemu_hud_init_input_only(SDL_Window *window)
+{
+    xemu_hud_init_common(window, NULL, false);
+    g_hud_has_gl_renderer = false;
+}
+
 void xemu_hud_cleanup(void)
 {
-    ImGui_ImplOpenGL3_Shutdown();
+    if (g_hud_has_gl_renderer) {
+        ImGui_ImplOpenGL3_Shutdown();
+    }
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 }
