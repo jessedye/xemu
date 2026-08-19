@@ -1261,7 +1261,9 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         sync_staging_buffer(pg, cmd, BUFFER_VERTEX_INLINE_STAGING,
                                 BUFFER_VERTEX_INLINE);
         sync_staging_buffer(pg, cmd, BUFFER_UNIFORM_STAGING, BUFFER_UNIFORM);
-        bitmap_clear(r->uploaded_bitmap, 0, r->bitmap_size);
+        /* The upload bitmap survives until the submission is reclaimed: it is
+         * what lets the vertex-RAM guard see pages the in-flight draws still
+         * read. Cleared in pgraph_vk_wait_for_submission. */
         flush_memory_buffer(pg, cmd);
         VK_CHECK(vkEndCommandBuffer(r->aux_command_buffer));
         r->in_aux_command_buffer = false;
@@ -1363,6 +1365,7 @@ void pgraph_vk_wait_for_submission(PGRAPHState *pg)
 
     r->descriptor_set_index = 0;
     r->submission_in_flight = false;
+    bitmap_clear(r->uploaded_bitmap, 0, r->bitmap_size);
     destroy_framebuffers(pg);
 
     if (r->check_budget_on_wait) {

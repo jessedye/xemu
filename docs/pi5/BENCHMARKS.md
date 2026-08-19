@@ -36,6 +36,7 @@ VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
 | 7 | Non-blocking presenter on the readback path | 16.6 fps | 6.3 fps | **reverted** — starved the upload |
 | 8 | Vulkan swapchain presentation (`XEMU_DISPLAY_BACKEND=vulkan`) | 18.0-18.4 fps, readback 10.9-11.7 ms, 1% low 7.8 | 19.4-19.9 fps, readback 0, 1% low 9.2 | kept, opt-in (+7% fps, +18% 1% low) |
 | 9 | Deferred flip-stall wait, first attempt (`XEMU_ASYNC_FLIP=1`) | 19.8 fps | 5.8 fps, assert, guest starved 1000x | **broken** — reclaim ran after next-draw allocation; fix at HEAD, untested |
+| 13 | N1 safety triad (race-free deferral), A/B on bdda32f | 19.7 fps, flip wait 9.55 | 20.2 fps (within noise), flip wait 10.44 (!), stutters/min -7%, p99 +7%, 0 errors | the settle-before-every-mirror-write reclaims the deferral immediately: safe but mechanism gone; refine to overlap-only settle |
 | 10 | Deferred flip-stall wait, repaired (reclaim at begin_pre_draw) | 19.6 fps, host wait 20.4 ms | 20.4 fps (within noise), host wait 10.2 ms (flip 9.70 -> 0.60), stutters/min -12%, 1% low -5%, 0 errors, guest work fair | kept opt-in — correct, but fps unchanged: **pgraph fence waits are not the frame-rate limiter** |
 
 ## Current frame budget (HEAD, Vulkan presentation, measured)

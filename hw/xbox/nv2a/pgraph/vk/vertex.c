@@ -49,20 +49,16 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
 
     pgraph_vk_download_surfaces_in_range_if_dirty(pg, offset, size);
 
-    /* The mirror is persistently mapped and bound directly by in-flight
-     * draws, and the uploaded bitmap was cleared when they were submitted, so
-     * it cannot say whether an outstanding submission still reads these
-     * pages. Settle the submission before touching the memory. */
-    pgraph_vk_wait_for_submission(pg);
-
     size_t start_bit = offset / TARGET_PAGE_SIZE;
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
 
     if (find_next_bit(r->uploaded_bitmap, start_bit + nbits, start_bit) <
         end_bit) {
-        // Vertex data changed while building the draw list. Finish drawing
-        // before updating RAM buffer.
+        /* Vertex data changed under recorded draws — drawn or in flight; the
+         * bitmap is cleared only when the submission is reclaimed, so this
+         * guard covers the deferred window too. Settle before touching the
+         * memory. Writes to pages no draw referenced fall through freely. */
         pgraph_vk_finish(pg, VK_FINISH_REASON_VERTEX_BUFFER_DIRTY);
     }
 
