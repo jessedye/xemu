@@ -33,6 +33,11 @@ typedef struct PresentState {
     int window_width;
     int window_height;
 
+    /* Draw time of the frame currently on screen, so an unchanged one is not
+     * presented again. */
+    unsigned last_draw_time;
+    bool have_presented;
+
     VkSemaphore image_available;
     VkSemaphore render_finished;
     VkFence in_flight;
@@ -153,6 +158,7 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
     g_present.format = chosen.format;
     g_present.extent = extent;
     g_present.present_mode = present_mode;
+    g_present.have_presented = false;
     return true;
 }
 
@@ -292,6 +298,13 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
         return false;
     }
 
+    /* The image on screen is still the current one; presenting it again would
+     * cost a full-screen blit and show nothing new. */
+    if (g_present.have_presented &&
+        g_present.last_draw_time == r->display.draw_time) {
+        return false;
+    }
+
     /* Skip this frame rather than wait: the caller is the thread running the
      * guest, and the display can afford to miss a frame far more cheaply than
      * emulation can afford to stall. */
@@ -400,6 +413,9 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
         .pImageIndices = &index,
     };
     vkQueuePresentKHR(r->queue, &present_info);
+
+    g_present.last_draw_time = r->display.draw_time;
+    g_present.have_presented = true;
 
     return true;
 }
