@@ -53,6 +53,23 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
 
+    if (getenv("XEMU_TRACE_VERTEX_DIRTY")) {
+        static unsigned long n, next = 1;
+        if (++n >= next) {
+            size_t overlapping = 0;
+            for (size_t b = start_bit; b < end_bit; b++) {
+                if (test_bit(b, r->uploaded_bitmap)) {
+                    overlapping++;
+                }
+            }
+            fprintf(stderr,
+                    "xtrace: vertex_sync count=%lu size=%zu pages=%zu "
+                    "overlapping=%zu\n",
+                    n, (size_t)size, nbits, overlapping);
+            next *= 10;
+        }
+    }
+
     if (find_next_bit(r->uploaded_bitmap, start_bit + nbits, start_bit) <
         end_bit) {
         /* Vertex data changed under recorded draws — drawn or in flight; the

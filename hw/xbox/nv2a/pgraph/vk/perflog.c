@@ -47,6 +47,8 @@ static const struct {
     { NV2A_PROF_FINISH_PRESENTING,   "fin_presenting" },
     { NV2A_PROF_FINISH_STALLED,      "fin_stalled" },
     { NV2A_PROF_FINISH_NEED_BUFFER_SPACE, "fin_buffer_space" },
+    { NV2A_PROF_FINISH_VERTEX_BUFFER_DIRTY, "fin_vertex_dirty" },
+    { NV2A_PROF_GEOM_BUFFER_UPDATE_1, "mirror_sync" },
     /* Which pool actually ran out; fin_buffer_space only says one did. */
     { NV2A_PROF_NBS_UNIFORM_STAGING,  "nbs_uniform" },
     { NV2A_PROF_NBS_DESCRIPTOR_SETS,  "nbs_descriptors" },
