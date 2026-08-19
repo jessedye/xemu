@@ -27,6 +27,17 @@
 
 static bool enable_validation = false;
 
+/* Presentation backend selection, read the same way the UI reads it. A
+ * swapchain needs the surface extensions at instance creation and
+ * VK_KHR_swapchain on the device, and both have to be requested before the
+ * renderer knows anything about a window, so the choice is consulted here
+ * directly rather than plumbed down from the UI. */
+static bool vulkan_display_backend_selected(void)
+{
+    const char *choice = getenv("XEMU_DISPLAY_BACKEND");
+    return choice && !strcmp(choice, "vulkan");
+}
+
 static char const *const validation_layers[] = {
     "VK_LAYER_KHRONOS_validation",
 };
@@ -142,6 +153,28 @@ add_optional_instance_extension_names(PGRAPHState *pg,
         g_config.display.vulkan.validation_layers &&
         add_extension_if_available(available_extensions, enabled_extension_names,
                                    VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    if (vulkan_display_backend_selected()) {
+        /* Presenting to a window needs the generic surface extension plus the
+         * platform one. Ask for the platforms this build might run on and let
+         * availability decide; a missing one simply is not added. */
+        static const char *const surface_extensions[] = {
+            VK_KHR_SURFACE_EXTENSION_NAME,
+#ifdef WIN32
+            "VK_KHR_win32_surface",
+#else
+            "VK_KHR_xlib_surface",
+            "VK_KHR_xcb_surface",
+            "VK_KHR_wayland_surface",
+#endif
+        };
+
+        for (int i = 0; i < ARRAY_SIZE(surface_extensions); i++) {
+            add_extension_if_available(available_extensions,
+                                       enabled_extension_names,
+                                       surface_extensions[i]);
+        }
+    }
 }
 
 static bool create_instance(PGRAPHState *pg, Error **errp)
@@ -314,6 +347,12 @@ static StringArray *get_required_device_extension_names(void)
 
     g_array_append_vals(extensions, required_device_extensions,
                         ARRAY_SIZE(required_device_extensions));
+
+    if (vulkan_display_backend_selected()) {
+        static const char *const swapchain_extension =
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        g_array_append_val(extensions, swapchain_extension);
+    }
 
     return extensions;
 }
