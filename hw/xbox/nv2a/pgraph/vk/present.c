@@ -23,6 +23,7 @@ typedef struct PresentState {
     VkSwapchainKHR swapchain;
     VkFormat format;
     VkExtent2D extent;
+    VkPresentModeKHR present_mode;
 
     uint32_t num_images;
     VkImage *images;
@@ -88,6 +89,33 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
      * is implied by the choice. */
     VkSurfaceFormatKHR chosen = formats[0];
 
+    /* FIFO blocks the caller until the next vertical blank. Presenting runs on
+     * the thread that also executes the guest's command stream, so blocking
+     * there starves emulation; prefer a mode that returns immediately. */
+    uint32_t num_modes = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(r->physical_device,
+                                              g_present.surface, &num_modes,
+                                              NULL);
+    g_autofree VkPresentModeKHR *modes =
+        num_modes ? g_malloc_n(num_modes, sizeof(*modes)) : NULL;
+    if (num_modes) {
+        vkGetPhysicalDeviceSurfacePresentModesKHR(r->physical_device,
+                                                  g_present.surface,
+                                                  &num_modes, modes);
+    }
+
+    /* FIFO is the only mode guaranteed to exist, so it is the fallback. */
+    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    for (uint32_t i = 0; i < num_modes; i++) {
+        if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+            present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+            break;
+        }
+        if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+    }
+
     uint32_t num_images = caps.minImageCount + 1;
     if (caps.maxImageCount && num_images > caps.maxImageCount) {
         num_images = caps.maxImageCount;
@@ -107,7 +135,7 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = caps.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+        .presentMode = present_mode,
         .clipped = VK_TRUE,
     };
 
@@ -124,6 +152,7 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
 
     g_present.format = chosen.format;
     g_present.extent = extent;
+    g_present.present_mode = present_mode;
     return true;
 }
 
@@ -196,9 +225,15 @@ bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
                                       &g_present.command_buffer));
 
     g_present.initialized = true;
-    fprintf(stderr, "present: swapchain ready, %ux%u, %u images\n",
+    static const char *const mode_names[] = {
+        [VK_PRESENT_MODE_IMMEDIATE_KHR] = "immediate",
+        [VK_PRESENT_MODE_MAILBOX_KHR] = "mailbox",
+        [VK_PRESENT_MODE_FIFO_KHR] = "fifo",
+        [VK_PRESENT_MODE_FIFO_RELAXED_KHR] = "fifo-relaxed",
+    };
+    fprintf(stderr, "present: swapchain ready, %ux%u, %u images, %s\n",
             g_present.extent.width, g_present.extent.height,
-            g_present.num_images);
+            g_present.num_images, mode_names[g_present.present_mode]);
     return true;
 }
 
@@ -257,13 +292,21 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
         return false;
     }
 
-    VK_CHECK(vkWaitForFences(r->device, 1, &g_present.in_flight, VK_TRUE,
-                             UINT64_MAX));
+    /* Skip this frame rather than wait: the caller is the thread running the
+     * guest, and the display can afford to miss a frame far more cheaply than
+     * emulation can afford to stall. */
+    if (vkWaitForFences(r->device, 1, &g_present.in_flight, VK_TRUE, 0) !=
+        VK_SUCCESS) {
+        return false;
+    }
 
     uint32_t index = 0;
     VkResult result = vkAcquireNextImageKHR(
-        r->device, g_present.swapchain, UINT64_MAX, g_present.image_available,
+        r->device, g_present.swapchain, 0, g_present.image_available,
         VK_NULL_HANDLE, &index);
+    if (result == VK_NOT_READY || result == VK_TIMEOUT) {
+        return false;
+    }
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         /* The window changed size; rebuild on the next frame. */
         vkDeviceWaitIdle(r->device);
