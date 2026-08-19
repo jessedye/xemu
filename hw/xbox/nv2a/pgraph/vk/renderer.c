@@ -105,6 +105,11 @@ static void pgraph_vk_flush(NV2AState *d)
 {
     PGRAPHState *pg = &d->pgraph;
 
+    /* This invalidates the whole of VRAM: every texture is marked dirty and
+     * the entire vertex mirror is re-uploaded. Record how often it happens so
+     * the cost is known rather than assumed. */
+    pgraph_vk_perflog_event("pgraph_flush", 0);
+
     pgraph_vk_finish(pg, VK_FINISH_REASON_FLUSH);
     pgraph_vk_surface_flush(d);
     pgraph_vk_mark_textures_possibly_dirty(d, 0, memory_region_size(d->vram));
