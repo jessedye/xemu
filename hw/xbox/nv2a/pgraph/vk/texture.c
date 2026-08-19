@@ -1194,10 +1194,39 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         key.scale = pg->surface_scale_factor;
     }
 
+    VkColorFormatInfo vkf = kelvin_color_format_vk_map[state.color_format];
+
+    /* Sample the surface's image directly instead of copying it: valid for
+     * color surfaces of the same VkFormat while the surface is not also the
+     * current render target. */
+    bool alias = r->surface_general_layout && surface_to_texture &&
+                 surface->color && surface != r->color_binding &&
+                 vkf.vk_format == surface->host_fmt.vk_format;
+
+    /* The copy path's transitions doubled as the write-to-sample barrier;
+     * a direct alias of a surface drawn in this command buffer needs an
+     * explicit one. */
+    if (alias && r->in_command_buffer &&
+        surface->draw_time >= r->command_buffer_start_time) {
+        VkCommandBuffer cmd = pgraph_vk_begin_nondraw_commands(pg);
+        pgraph_vk_transition_image_layout(pg, cmd, surface->image,
+                                          surface->host_fmt.vk_format,
+                                          VK_IMAGE_LAYOUT_GENERAL,
+                                          VK_IMAGE_LAYOUT_GENERAL);
+        pgraph_vk_end_nondraw_commands(pg, cmd);
+    }
+
     uint64_t key_hash = fast_hash((void*)&key, sizeof(key));
     LruNode *node = lru_lookup(&r->texture_cache, key_hash, &key);
     TextureBinding *snode = container_of(node, TextureBinding, node);
     bool binding_found = snode->image != VK_NULL_HANDLE;
+
+    if (binding_found &&
+        ((snode->alias_surface && (!alias || snode->alias_surface != surface)) ||
+         (!snode->alias_surface && alias))) {
+        texture_cache_release_node_resources(r, snode);
+        binding_found = false;
+    }
 
     if (binding_found) {
         NV2A_VK_DPRINTF("Cache hit");
@@ -1226,7 +1255,9 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
     }
 
     if (binding_found) {
-        if (surface_to_texture) {
+        if (snode->alias_surface) {
+            /* The view reads the surface itself; nothing to refresh. */
+        } else if (surface_to_texture) {
             // FIXME: Add draw time tracking
             if (surface->draw_time != snode->draw_time) {
                 copy_surface_to_texture(pg, surface, snode);
@@ -1249,7 +1280,6 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
     snode->possibly_dirty = false;
     snode->hash = content_hash;
 
-    VkColorFormatInfo vkf = kelvin_color_format_vk_map[state.color_format];
     assert(vkf.vk_format != 0);
     assert(0 < state.dimensionality);
     assert(state.dimensionality < ARRAY_SIZE(dimensionality_to_vk_image_type));
@@ -1278,24 +1308,34 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
                                         &image_create_info.extent.height);
     }
 
-    VmaAllocationCreateInfo alloc_create_info = {
-        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
-    };
+    if (alias) {
+        snode->image = surface->image;
+        snode->allocation = VK_NULL_HANDLE;
+        snode->allocation_size = 0;
+        snode->current_layout = VK_IMAGE_LAYOUT_GENERAL;
+        snode->alias_surface = surface;
+    } else {
+        snode->alias_surface = NULL;
 
-    r->texture_in_creation = snode;
-    VkResult result = pgraph_vk_create_image_evicting(
-        r, &image_create_info, &alloc_create_info, &snode->image,
-        &snode->allocation);
+        VmaAllocationCreateInfo alloc_create_info = {
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+        };
 
-    if (result == VK_SUCCESS) {
-        VmaAllocationInfo alloc_info;
-        vmaGetAllocationInfo(r->allocator, snode->allocation, &alloc_info);
-        snode->allocation_size = alloc_info.size;
-        r->texture_cache_bytes += alloc_info.size;
+        r->texture_in_creation = snode;
+        VkResult result = pgraph_vk_create_image_evicting(
+            r, &image_create_info, &alloc_create_info, &snode->image,
+            &snode->allocation);
+
+        if (result == VK_SUCCESS) {
+            VmaAllocationInfo alloc_info;
+            vmaGetAllocationInfo(r->allocator, snode->allocation, &alloc_info);
+            snode->allocation_size = alloc_info.size;
+            r->texture_cache_bytes += alloc_info.size;
+        }
+        r->texture_in_creation = NULL;
+
+        VK_CHECK(result);
     }
-    r->texture_in_creation = NULL;
-
-    VK_CHECK(result);
 
     /* Keep the cache inside its budget so later allocations do not have to
      * fail first. Entries that are bound or in flight refuse eviction, so this
@@ -1315,7 +1355,7 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
         .viewType = state.cubemap ?
             VK_IMAGE_VIEW_TYPE_CUBE :
             dimensionality_to_vk_image_view_type[state.dimensionality],
-        .format = vkf.vk_format,
+        .format = alias ? surface->host_fmt.vk_format : vkf.vk_format,
         .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         .subresourceRange.baseMipLevel = 0,
         .subresourceRange.levelCount = image_create_info.mipLevels,
@@ -1448,7 +1488,9 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
     r->texture_bindings[texture_idx] = snode;
 
     if (surface_to_texture) {
-        copy_surface_to_texture(pg, surface, snode);
+        if (!alias) {
+            copy_surface_to_texture(pg, surface, snode);
+        }
     } else {
         upload_texture_image(pg, texture_idx, snode);
         snode->draw_time = 0;
@@ -1513,6 +1555,44 @@ void pgraph_vk_bind_textures(NV2AState *d)
     NV2A_VK_DGROUP_END();
 }
 
+struct AliasEvictState {
+    PGRAPHVkState *r;
+    SurfaceBinding *surface;
+};
+
+static void evict_alias_visitor(Lru *lru, LruNode *node, void *opaque)
+{
+    struct AliasEvictState *st = opaque;
+    TextureBinding *snode = container_of(node, TextureBinding, node);
+
+    if (snode->alias_surface == st->surface) {
+        texture_cache_release_node_resources(st->r, snode);
+        lru_evict_node(lru, node);
+    }
+}
+
+/* A surface is going away; nothing may keep sampling its image. The caller
+ * has already finished outstanding work. */
+void pgraph_vk_evict_texture_aliases(PGRAPHState *pg, SurfaceBinding *surface)
+{
+    PGRAPHVkState *r = pg->vk_renderer_state;
+
+    if (!r->surface_general_layout) {
+        return;
+    }
+
+    for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
+        if (r->texture_bindings[i] &&
+            r->texture_bindings[i]->alias_surface == surface) {
+            r->texture_bindings[i] = NULL;
+            pg->texture_dirty[i] = true;
+        }
+    }
+
+    struct AliasEvictState st = { .r = r, .surface = surface };
+    lru_visit_active(&r->texture_cache, evict_alias_visitor, &st);
+}
+
 static void texture_cache_entry_init(Lru *lru, LruNode *node, const void *state)
 {
     TextureBinding *snode = container_of(node, TextureBinding, node);
@@ -1521,6 +1601,7 @@ static void texture_cache_entry_init(Lru *lru, LruNode *node, const void *state)
     snode->allocation = VK_NULL_HANDLE;
     snode->image_view = VK_NULL_HANDLE;
     snode->sampler = VK_NULL_HANDLE;
+    snode->alias_surface = NULL;
 }
 
 static void texture_cache_release_node_resources(PGRAPHVkState *r, TextureBinding *snode)
@@ -1531,7 +1612,12 @@ static void texture_cache_release_node_resources(PGRAPHVkState *r, TextureBindin
     vkDestroyImageView(r->device, snode->image_view, NULL);
     snode->image_view = VK_NULL_HANDLE;
 
-    vmaDestroyImage(r->allocator, snode->image, snode->allocation);
+    if (snode->alias_surface) {
+        /* The surface owns the image. */
+        snode->alias_surface = NULL;
+    } else {
+        vmaDestroyImage(r->allocator, snode->image, snode->allocation);
+    }
     snode->image = VK_NULL_HANDLE;
     snode->allocation = VK_NULL_HANDLE;
 

@@ -641,10 +641,24 @@ static void unregister_cpu_access_callback(NV2AState *d,
     }
 }
 
-static void bind_surface(PGRAPHVkState *r, SurfaceBinding *surface)
+static void bind_surface(PGRAPHState *pg, SurfaceBinding *surface)
 {
+    PGRAPHVkState *r = pg->vk_renderer_state;
+
     if (surface->color) {
         r->color_binding = surface;
+
+        /* Sampling and rendering the same image is a feedback loop; any
+         * texture slot aliasing this surface must rebind through the copy
+         * path. */
+        if (r->surface_general_layout) {
+            for (int i = 0; i < NV2A_MAX_TEXTURES; i++) {
+                if (r->texture_bindings[i] &&
+                    r->texture_bindings[i]->alias_surface == surface) {
+                    pg->texture_dirty[i] = true;
+                }
+            }
+        }
     } else {
         r->zeta_binding = surface;
     }
@@ -694,6 +708,7 @@ static void invalidate_surface(NV2AState *d, SurfaceBinding *surface)
     }
 
     unregister_cpu_access_callback(d, surface);
+    pgraph_vk_evict_texture_aliases(&d->pgraph, surface);
 
     QTAILQ_REMOVE(&r->surfaces, surface, entry);
     QTAILQ_INSERT_HEAD(&r->invalid_surfaces, surface, entry);
@@ -1628,7 +1643,7 @@ static void update_surface_part(NV2AState *d, bool upload, bool color)
                  surface->shape.clip_x, surface->shape.clip_width,
                  surface->shape.clip_y, surface->shape.clip_height, surface->pitch);
 
-        bind_surface(r, surface);
+        bind_surface(pg, surface);
         pg_surface->buffer_dirty = false;
     }
 

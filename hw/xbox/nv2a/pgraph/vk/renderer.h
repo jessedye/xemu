@@ -222,6 +222,9 @@ typedef struct TextureBinding {
     uint64_t hash;
     unsigned int draw_time;
     uint32_t submit_time;
+    /* When set, image and image_view alias this live surface instead of a
+     * copied cache texture; the surface owns the image. */
+    struct SurfaceBinding *alias_surface;
 } TextureBinding;
 
 typedef struct QueryReport {
@@ -638,6 +641,10 @@ void pgraph_vk_perflog_aux_wait(double wait_ms);
 
 // draw.c
 void pgraph_vk_wait_for_submission(PGRAPHState *pg);
+
+// texture.c
+void pgraph_vk_evict_texture_aliases(PGRAPHState *pg,
+                                     struct SurfaceBinding *surface);
 
 static inline VkImageLayout
 pgraph_vk_color_surface_layout(PGRAPHVkState *r)
