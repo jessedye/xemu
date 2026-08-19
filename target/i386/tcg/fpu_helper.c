@@ -73,45 +73,115 @@
 #define floatx80_ln2_d make_floatx80(0x3ffe, 0xb17217f7d1cf79abLL)
 #define floatx80_pi_d make_floatx80(0x4000, 0xc90fdaa22168c234LL)
 
-#if defined(XBOX) && defined(__x86_64__)
+#if defined(XBOX) && (defined(__x86_64__) || defined(__aarch64__))
 #ifdef USE_HARD_FPU
 /*
  * FIXME: rounding and exceptions
  */
 
+#if defined(__x86_64__)
+/* fval is the host's 80-bit long double overlaid on low/high, so a value
+ * written through either view is coherent through the other for free. */
+static inline floatx80 make_floatx80_hard(long double v)
+{
+    return (floatx80){ .fval = v };
+}
+#else
+/* fval is a separate double; synthesize the 80-bit fields alongside it so
+ * everything that reads them (fxam, fprem, FSAVE images, savestates) stays
+ * correct. A handful of integer ops per produced value, which is noise next
+ * to the softfloat routines this path replaces. */
+static inline floatx80 make_floatx80_hard(double v)
+{
+    union { double d; uint64_t b; } u = { .d = v };
+    uint64_t dman = u.b & 0xfffffffffffffull;
+    int dexp = (u.b >> 52) & 0x7ff;
+    uint16_t sign = (u.b >> 48) & 0x8000;
+    floatx80 r;
+
+    r.fval = v;
+    if (dexp == 0) {
+        /* Zeros and double subnormals flush to zero. */
+        r.low = 0;
+        r.high = sign;
+    } else if (dexp == 0x7ff) {
+        /* Infinities and NaNs, payload preserved. */
+        r.low = 0x8000000000000000ull | (dman << 11);
+        r.high = sign | 0x7fff;
+    } else {
+        r.low = 0x8000000000000000ull | (dman << 11);
+        r.high = sign | (uint16_t)(dexp - 1023 + 16383);
+    }
+    return r;
+}
+
+/* The 80-bit fields are authoritative for values that arrive as bits (an
+ * FLD m80 or an FRSTOR image); derive the double the arithmetic will use. */
+static inline double floatx80_bits_to_host(floatx80 a)
+{
+    int exp = a.high & 0x7fff;
+    uint64_t man = a.low;
+    double sign = (a.high & 0x8000) ? -1.0 : 1.0;
+    union { uint64_t b; double d; } u;
+
+    if (exp == 0) {
+        return sign * 0.0;
+    }
+    if (exp == 0x7fff) {
+        u.b = ((uint64_t)(a.high & 0x8000) << 48) | 0x7ff0000000000000ull |
+              ((man & 0x7fffffffffffffffull) >> 11);
+        return u.d;
+    }
+    int dexp = exp - 16383 + 1023;
+    if (dexp <= 0) {
+        return sign * 0.0;
+    }
+    if (dexp >= 0x7ff) {
+        u.b = ((uint64_t)(a.high & 0x8000) << 48) | 0x7ff0000000000000ull;
+        return u.d;
+    }
+    u.b = ((uint64_t)(a.high & 0x8000) << 48) | ((uint64_t)dexp << 52) |
+          ((man & 0x7fffffffffffffffull) >> 11);
+    return u.d;
+}
+#endif
+
 static inline
 floatx80 pack(floatx80 v, float_status *status)
 {
     switch (status->floatx80_rounding_precision) {
-    case floatx80_precision_s: return (floatx80){ .fval = (float)v.fval };
-    case floatx80_precision_d: return (floatx80){ .fval = (double)v.fval };
-    default: return v; /* floatx80_precision_x */
+    case floatx80_precision_s:
+        return make_floatx80_hard((float)v.fval);
+    case floatx80_precision_d:
+        return make_floatx80_hard((double)v.fval);
+    default:
+        return v; /* floatx80_precision_x */
     }
 }
 
 static inline
 floatx80 floatx80_add__hard(floatx80 a, floatx80 b, float_status *status)
 {
-    return pack((floatx80){ .fval = (a.fval + b.fval) }, status);
+    return pack(make_floatx80_hard(a.fval + b.fval), status);
 }
 
 static inline
 floatx80 floatx80_sub__hard(floatx80 a, floatx80 b, float_status *status)
 {
-    return pack((floatx80){ .fval = (a.fval - b.fval) }, status);
+    return pack(make_floatx80_hard(a.fval - b.fval), status);
 }
 
 static inline
 floatx80 floatx80_mul__hard(floatx80 a, floatx80 b, float_status *status)
 {
-    return pack((floatx80){ .fval = (a.fval * b.fval) }, status);
+    return pack(make_floatx80_hard(a.fval * b.fval), status);
 }
 
 static inline
 floatx80 floatx80_div__hard(floatx80 a, floatx80 b, float_status *status)
 {
     /* FIXME: Exceptions */
-    return pack((floatx80){ .fval = (a.fval / b.fval) }, status);
+    return pack(make_floatx80_hard(a.fval / b.fval), status);
 }
 
 static inline
@@ -126,7 +196,7 @@ FloatRelation floatx80_compare__hard(floatx80 a, floatx80 b, float_status *statu
 static inline
 floatx80 float32_to_floatx80__hard(float32 val, float_status *status)
 {
-    return (floatx80){ .fval = *(float *)&val };
+    return make_floatx80_hard(*(float *)&val);
 }
 
 static inline
@@ -144,7 +214,7 @@ float32 floatx80_to_float32__hard(floatx80 a, float_status *status)
 static inline
 floatx80 float64_to_floatx80__hard(float64 val, float_status *status)
 {
-    return (floatx80){ .fval = *(double *)&val };
+    return make_floatx80_hard(*(double *)&val);
 }
 
 static inline
@@ -162,7 +232,7 @@ float64 floatx80_to_float64__hard(floatx80 a, float_status *status)
 static inline
 floatx80 int32_to_floatx80__hard(int32_t a, float_status *status)
 {
-    return (floatx80){ .fval = a };
+    return make_floatx80_hard(a);
 }
 
 #define floatx80_add          floatx80_add__hard
@@ -284,6 +354,10 @@ static floatx80 do_fldt(X86Access *ac, target_ulong ptr)
 
     temp.l.lower = access_ldq(ac, ptr);
     temp.l.upper = access_ldw(ac, ptr + 8);
+#if defined(USE_HARD_FPU) && !defined(__x86_64__)
+    /* The bits are authoritative; derive the double the arithmetic uses. */
+    temp.d.fval = floatx80_bits_to_host(temp.d);
+#endif
     return temp.d;
 }
 
