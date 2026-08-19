@@ -16,6 +16,10 @@ LOG="/home/pi/xemu-last.log"
 # derives its BIOS, EEPROM and HDD paths from the config, so point at both
 # explicitly rather than relying on the calling user.
 export HOME=/home/pi
+# x86-TSO via acquire/release accesses in the TCG aarch64 backend: measured
+# p50 -10%, stutters -17% on Halo 2; soaked clean on GTA SA (native 60) and
+# Morrowind. Remove this line to fall back to fence-based ordering.
+export XEMU_TSO=1
 export XDG_DATA_HOME=/home/pi/.local/share
 
 # Output at 1080p rather than the display native 4K. The Xbox renders at
