@@ -1789,6 +1789,12 @@ static TCGReg compose_ordered_addr(TCGContext *s, HostAddress h)
     return TCG_REG_TMP2;
 }
 
+/* Without FEAT_LSE2, LDAPR and STLR fault on unaligned addresses, and x86
+ * guest code performs unaligned accesses as a matter of course. Bytes are
+ * always aligned; wider accesses test alignment at run time and fall back
+ * to a plain access bracketed by the barrier the ordered form replaces.
+ * The aligned case dominates dynamically, so the common cost is one
+ * ANDS + untaken branch on top of the ordered access itself. */
 static void tcg_out_qemu_ld_ordered(TCGContext *s, MemOp memop, TCGType ext,
                                     TCGReg data_r, HostAddress h)
 {
@@ -1797,10 +1803,32 @@ static void tcg_out_qemu_ld_ordered(TCGContext *s, MemOp memop, TCGType ext,
     static const AArch64Insn ldapr[4] = {
         I3308_LDAPRB, I3308_LDAPRH, I3308_LDAPRW, I3308_LDAPRX,
     };
+    static const AArch64Insn ldr[4] = {
+        I3312_LDRB, I3312_LDRH, I3312_LDRW, I3312_LDRX,
+    };
 
-    tcg_out32(s, ldapr[size] | a << 5 | data_r);
+    if (size == MO_8) {
+        tcg_out32(s, ldapr[MO_8] | a << 5 | data_r);
+    } else {
+        tcg_insn_unit *br_unal, *br_join;
 
-    /* LDAPR zero-extends; the signed forms take one more instruction. */
+        tcg_out_logicali(s, I3404_ANDSI, 0, TCG_REG_XZR, a,
+                         (1 << size) - 1);
+        br_unal = s->code_ptr;
+        tcg_out_insn(s, 3202, B_C, TCG_COND_NE, 0);
+
+        tcg_out32(s, ldapr[size] | a << 5 | data_r);
+        br_join = s->code_ptr;
+        tcg_out32(s, I3206_B);
+
+        reloc_pc19(br_unal, tcg_splitwx_to_rx(s->code_ptr));
+        tcg_out_ldst_r(s, ldr[size], data_r, a, TCG_TYPE_I64, TCG_REG_XZR);
+        tcg_out_mb(s, TCG_MO_LD_LD | TCG_MO_LD_ST);
+        reloc_pc26(br_join, tcg_splitwx_to_rx(s->code_ptr));
+    }
+
+    /* The ordered and plain forms both zero-extend; the signed variants
+     * take one more instruction. */
     if (memop & MO_SIGN) {
         tcg_out_sxt(s, (ext || size == MO_32) ? TCG_TYPE_I64 : TCG_TYPE_I32,
                     size, data_r, data_r);
@@ -1811,11 +1839,33 @@ static void tcg_out_qemu_st_ordered(TCGContext *s, MemOp memop,
                                     TCGReg data_r, HostAddress h)
 {
     TCGReg a = compose_ordered_addr(s, h);
+    MemOp size = memop & MO_SIZE;
     static const AArch64Insn stlr[4] = {
         I3308_STLRB, I3308_STLRH, I3308_STLRW, I3308_STLRX,
     };
+    static const AArch64Insn str[4] = {
+        I3312_STRB, I3312_STRH, I3312_STRW, I3312_STRX,
+    };
 
-    tcg_out32(s, stlr[memop & MO_SIZE] | a << 5 | data_r);
+    if (size == MO_8) {
+        tcg_out32(s, stlr[MO_8] | a << 5 | data_r);
+        return;
+    }
+
+    tcg_insn_unit *br_unal, *br_join;
+
+    tcg_out_logicali(s, I3404_ANDSI, 0, TCG_REG_XZR, a, (1 << size) - 1);
+    br_unal = s->code_ptr;
+    tcg_out_insn(s, 3202, B_C, TCG_COND_NE, 0);
+
+    tcg_out32(s, stlr[size] | a << 5 | data_r);
+    br_join = s->code_ptr;
+    tcg_out32(s, I3206_B);
+
+    reloc_pc19(br_unal, tcg_splitwx_to_rx(s->code_ptr));
+    tcg_out_mb(s, TCG_MO_ALL);
+    tcg_out_ldst_r(s, str[size], data_r, a, TCG_TYPE_I64, TCG_REG_XZR);
+    reloc_pc26(br_join, tcg_splitwx_to_rx(s->code_ptr));
 }
 
 static void tcg_out_qemu_ld_direct(TCGContext *s, MemOp memop, TCGType ext,
