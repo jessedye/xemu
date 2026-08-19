@@ -1,0 +1,56 @@
+# Pi 5 benchmark ledger
+
+Every performance claim on the Pi 5 branch traces back to a row here. The
+rules that keep the numbers honest:
+
+- **One variable at a time.** A/B pairs run on the same binary whenever the
+  change is runtime-gated (env var / config), otherwise consecutive builds
+  with only the change under test between them.
+- **Bounded, repeatable runs.** `contrib/pi5/bench.sh` (175 s, Halo 2, 1080p
+  output, `timeout -s KILL`), analysed with `scripts/perflog_report.py`
+  (`summary` for one run, `compare` for a pair — its noise verdict decides
+  whether a delta is real).
+- **Fairness check.** Compare the peak `xtrace: surface_update count=` between
+  the runs. A run whose guest did 1000x less drawing was starved; its fps is
+  meaningless however plausible it looks. `perflog_report.py compare` flags
+  this automatically from the sibling `.log`.
+- **Record the binary.** `xemu_commit:` from the run log identifies what
+  actually ran; a benchmark of a stale binary has happened once already.
+
+## Environment
+
+Raspberry Pi 5, 2 GB, Cortex-A76 4x2.8 GHz, V3D 7.1 @ 1350 MHz (VideoCore
+VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
+(caps at 30 fps — the "native" target for this table).
+
+## Ledger
+
+| # | Change | Before | After | Verdict |
+|---|--------|--------|-------|---------|
+| 1 | Index-buffer clamp (bounded allocation) | 855 MiB reserved, 254 tex evictions | 580 MiB, 0 evictions | kept |
+| 2 | 1080p output instead of 4K | — | +24% fps | kept (launcher forces 1080p) |
+| 3 | V3D 1350 MHz | — | +9% fps, readback 18.14 -> 14.57 ms | kept |
+| 4 | -O3 | — | +1.1% | kept |
+| 5 | LTO | — | +1.0% | kept |
+| 6 | Fence instead of vkQueueWaitIdle (aux submits) | — | no change | kept for correctness |
+| 7 | Non-blocking presenter on the readback path | 16.6 fps | 6.3 fps | **reverted** — starved the upload |
+| 8 | Vulkan swapchain presentation (`XEMU_DISPLAY_BACKEND=vulkan`) | 18.0-18.4 fps, readback 10.9-11.7 ms, 1% low 7.8 | 19.4-19.9 fps, readback 0, 1% low 9.2 | kept, opt-in (+7% fps, +18% 1% low) |
+| 9 | Deferred flip-stall wait, first attempt (`XEMU_ASYNC_FLIP=1`) | 19.8 fps | 5.8 fps, assert, guest starved 1000x | **broken** — reclaim ran after next-draw allocation; fix at HEAD, untested |
+
+## Current frame budget (HEAD, Vulkan presentation, measured)
+
+```
+frame p50                47.1 ms   (19.9 fps)
+GPU busy (timestamps)    17.71 ms  (GPU idle 62% of the frame)
+host blocked on fences   20.21 ms
+    flip_stall            9.59
+    vertex_buffer_dirty   6.81
+    need_buffer_space     3.62
+    presenting            0.17
+host work                ~26.9 ms
+ideal CPU/GPU overlap    max(26.9, 17.7) ~= 27 ms  => ~37 fps ceiling
+```
+
+Host wait ~= GPU busy: the pipeline is serialised (record -> submit -> wait).
+Reducing the waits is worth more than any GPU-side optimisation until the GPU
+stops being idle 62% of the frame.
