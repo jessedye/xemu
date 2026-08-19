@@ -161,7 +161,12 @@ static void xemu_hud_init_common(SDL_Window *window, void *sdl_gl_context,
     }
 #endif
     g_last_scale = g_viewport_mgr.m_scale;
-    InitializeStyle();
+    if (with_gl_renderer) {
+        /* Building the font atlas goes straight to the OpenGL backend, so it
+         * has nothing to build into here. Nothing draws on this path, so no
+         * atlas is needed. */
+        InitializeStyle();
+    }
     g_main_menu.SetNextViewIndex(g_config.general.last_viewed_menu_index);
     first_boot_window.is_open = g_config.general.show_welcome;
 }
