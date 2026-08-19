@@ -12,11 +12,12 @@
 #include "qemu/rcu.h"
 #include "exec/cpu-common.h"
 
-/* Raised from 12 for the Pi 5 xemu work: helper_lookup_tb_ptr measured at
- * 10.4% of the vCPU thread on ret-heavy x86 guest code, and a larger cache
- * costs only 512 KiB per vCPU. Whether misses or sheer call frequency
- * dominate is exactly what the before/after benchmark decides. */
-#define TB_JMP_CACHE_BITS 15
+/* 12 bits is measured, not inherited: helper_lookup_tb_ptr is 10.4% of the
+ * vCPU thread on ret-heavy x86 guest code, and raising this to 15 regressed
+ * every consistency metric (p50 +7%, 1%-low -11%) - 4k entries of probe
+ * data stay hot in a Cortex-A76's L2 where 32k entries thrash it. The cost
+ * is call frequency, not capacity misses. */
+#define TB_JMP_CACHE_BITS 12
 #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
 
 /*
