@@ -162,7 +162,12 @@ void pgraph_vk_init_buffers(NV2AState *d)
         .alloc_info = device_alloc_create_info,
         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .buffer_size = sizeof(pg->inline_elements) * 100,
+        /* One hundred times the largest batch is far more than a frame can
+         * use, and unlike the other buffers this was not clamped, so it
+         * reserved about 199 MiB here and the same again for its staging
+         * partner. Clamp it like the rest. */
+        .buffer_size =
+            clamp_buffer_size(r, sizeof(pg->inline_elements) * 100, false),
     };
 
     r->storage_buffers[BUFFER_INDEX_STAGING] = (StorageBuffer){
