@@ -578,6 +578,11 @@ static void create_display_image(PGRAPHState *pg, int width, int height)
         destroy_current_display_image(pg);
     }
 
+    /* A fresh image holds nothing, so the previously composited frame must not
+     * be treated as still present in it. */
+    d->draw_time = 0;
+    memset(&d->pvideo.state, 0, sizeof(d->pvideo.state));
+
     const GLint gl_internal_format = GL_RGBA8;
     bool use_optimal_tiling = true;
 
@@ -908,7 +913,19 @@ static void render_display(PGRAPHState *pg, SurfaceBinding *surface)
 
     pgraph_vk_upload_surface_data(d, surface, !tcg_enabled());
 
-    disp->pvideo.state = get_pvideo_state(pg);
+    PvideoState pvideo = get_pvideo_state(pg);
+
+    /* The UI asks for a frame at the host refresh rate, which is well above
+     * the rate the guest produces them, so the same image is often requested
+     * several times. Compositing it again costs GPU time the guest needs, so
+     * reuse what is already there until the framebuffer or the overlay
+     * changes. */
+    if (disp->draw_time == surface->draw_time &&
+        !memcmp(&disp->pvideo.state, &pvideo, sizeof(pvideo))) {
+        return;
+    }
+
+    disp->pvideo.state = pvideo;
     if (disp->pvideo.state.enabled) {
         upload_pvideo_image(pg, disp->pvideo.state);
     }
