@@ -17,6 +17,45 @@
 #include "qemu/osdep.h"
 #include "qemu/timer.h"
 #include "renderer.h"
+#include "hw/xbox/nv2a/debug.h"
+
+/* Counters worth carrying into the log, chosen to separate the usual causes of
+ * a hitch: shader or pipeline creation (compilation stall), submission and
+ * draw volume (the GPU simply has too much to do), and the reasons pgraph had
+ * to synchronise (waiting on the host rather than working). */
+static const struct {
+    enum NV2A_PROF_COUNTERS_ENUM id;
+    const char *name;
+} k_counters[] = {
+    { NV2A_PROF_SHADER_GEN,          "shader_gen" },
+    { NV2A_PROF_PIPELINE_GEN,        "pipeline_gen" },
+    { NV2A_PROF_QUEUE_SUBMIT,        "queue_submit" },
+    { NV2A_PROF_DRAW_ARRAYS,         "draw_arrays" },
+    { NV2A_PROF_BEGIN_ENDS,          "begin_ends" },
+    { NV2A_PROF_TEX_UPLOAD,          "tex_upload" },
+    { NV2A_PROF_FINISH_SURFACE_DOWN, "fin_surface_down" },
+    { NV2A_PROF_FINISH_FLIP_STALL,   "fin_flip_stall" },
+    { NV2A_PROF_FINISH_PRESENTING,   "fin_presenting" },
+    { NV2A_PROF_FINISH_STALLED,      "fin_stalled" },
+    { NV2A_PROF_FINISH_NEED_BUFFER_SPACE, "fin_buffer_space" },
+};
+#define NUM_COUNTERS ARRAY_SIZE(k_counters)
+
+/* Board sensors, read once per window rather than per frame. Missing files are
+ * skipped, so this stays harmless on hardware that does not expose them. */
+static long read_long_file(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        return -1;
+    }
+    long v = -1;
+    if (fscanf(f, "%ld", &v) != 1) {
+        v = -1;
+    }
+    fclose(f);
+    return v;
+}
 
 #define PERFLOG_WINDOW_NS (5 * NANOSECONDS_PER_SECOND)
 
@@ -54,6 +93,8 @@ static struct {
     unsigned long stutter_lines;
     unsigned long window_index;
     double stutter_ms;
+
+    long counters[NUM_COUNTERS];
 } g_perflog;
 
 static int cmp_double(const void *a, const void *b)
@@ -93,9 +134,18 @@ void pgraph_vk_perflog_init(void)
             "# kind=window: elapsed_s,frames,fps,frame_ms_avg,frame_ms_p50,"
             "frame_ms_p99,frame_ms_max,fps_1pct_low,stutters,"
             "download_ms_avg,upload_ms_avg,tex_cache_mb,resolution\n"
+            ",cpu_temp_c,cpu_mhz"
+            "\n"
             "# kind=stutter: elapsed_s,frame_ms,download_ms,upload_ms,"
             "tex_cache_mb,resolution\n"
-            "kind,elapsed_s,a,b,c,d,e,f,g,h,i,j\n");
+            "# kind=event:   elapsed_s,what,value\n");
+
+    /* Name the per-frame counter columns so the file is self describing. */
+    fprintf(g_perflog.f, "# counters (per frame):");
+    for (unsigned i = 0; i < NUM_COUNTERS; i++) {
+        fprintf(g_perflog.f, " %s", k_counters[i].name);
+    }
+    fprintf(g_perflog.f, "\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
 }
@@ -140,12 +190,28 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     }
     double fps_1pct_low = 1000.0 / (low_sum / low_count);
 
+    long cpu_mdeg = read_long_file("/sys/class/thermal/thermal_zone0/temp");
+    long cpu_khz =
+        read_long_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
+
     fprintf(g_perflog.f,
-            "window,%.1f,%u,%.1f,%.2f,%.2f,%.2f,%.2f,%.1f,%u,%.2f,%.2f,%.0f,%ux%u\n",
+            "window,%.1f,%u,%.1f,%.2f,%.2f,%.2f,%.2f,%.1f,%u,%.2f,%.2f,%.0f,%ux%u",
             elapsed_s, n, n / elapsed_s, avg, p50, p99, worst, fps_1pct_low,
             g_perflog.stutters, g_perflog.download_ms / n,
             g_perflog.upload_ms / n, (double)tex_bytes / (1024 * 1024), width,
             height);
+
+    fprintf(g_perflog.f, ",%.1f,%ld",
+            cpu_mdeg >= 0 ? cpu_mdeg / 1000.0 : -1.0,
+            cpu_khz >= 0 ? cpu_khz / 1000 : -1);
+
+    /* Per-frame averages: a hitch caused by compiling a shader shows up as a
+     * non-zero shader_gen or pipeline_gen, while a GPU that simply has too much
+     * to do shows in submissions and draws. */
+    for (unsigned i = 0; i < NUM_COUNTERS; i++) {
+        fprintf(g_perflog.f, ",%.2f", (double)g_perflog.counters[i] / n);
+    }
+    fprintf(g_perflog.f, "\n");
 
     if (g_perflog.dropped_samples) {
         fprintf(g_perflog.f, "# window %lu dropped %u samples (over capacity)\n",
@@ -158,6 +224,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     g_perflog.download_ms = 0;
     g_perflog.upload_ms = 0;
     g_perflog.stutters = 0;
+    memset(g_perflog.counters, 0, sizeof(g_perflog.counters));
     g_perflog.window_start_ns = now;
 }
 
@@ -187,6 +254,12 @@ void pgraph_vk_perflog_frame(double download_ms, double upload_ms,
     }
     g_perflog.download_ms += download_ms;
     g_perflog.upload_ms += upload_ms;
+
+    /* Counters report the most recently completed frame, so sampling them here
+     * accumulates them over the window. */
+    for (unsigned i = 0; i < NUM_COUNTERS; i++) {
+        g_perflog.counters[i] += nv2a_profile_get_counter_value(k_counters[i].id);
+    }
 
     if (frame_ms > g_perflog.stutter_ms) {
         g_perflog.stutters++;
