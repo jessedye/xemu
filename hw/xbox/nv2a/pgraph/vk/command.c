@@ -125,6 +125,19 @@ void pgraph_vk_init_command_buffers(PGRAPHState *pg)
     };
     VK_CHECK(vkCreateFence(r->device, &fence_create_info, NULL,
                            &r->aux_command_buffer_fence));
+
+    /* Timestamps are optional: a device reporting no valid bits cannot
+     * support them, and the renderer works the same without them. */
+    if (r->device_props.limits.timestampComputeAndGraphics) {
+        VkQueryPoolCreateInfo query_pool_info = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = 2,
+        };
+        VK_CHECK(vkCreateQueryPool(r->device, &query_pool_info, NULL,
+                                   &r->timestamp_pool));
+        r->timestamp_period_ns = r->device_props.limits.timestampPeriod;
+    }
 }
 
 void pgraph_vk_finalize_command_buffers(PGRAPHState *pg)
@@ -133,6 +146,11 @@ void pgraph_vk_finalize_command_buffers(PGRAPHState *pg)
 
     vkDestroyFence(r->device, r->aux_command_buffer_fence, NULL);
     r->aux_command_buffer_fence = VK_NULL_HANDLE;
+
+    if (r->timestamp_pool != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(r->device, r->timestamp_pool, NULL);
+        r->timestamp_pool = VK_NULL_HANDLE;
+    }
 
     destroy_command_buffers(pg);
     destroy_command_pool(pg);

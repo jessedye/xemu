@@ -349,6 +349,13 @@ typedef struct PGRAPHVkState {
 
     VkCommandBuffer aux_command_buffer;
     VkFence aux_command_buffer_fence;
+
+    /* Two timestamps bracketing the main command buffer, so the time the GPU
+     * spends executing it can be told apart from the time the host spends
+     * waiting for it. */
+    VkQueryPool timestamp_pool;
+    bool timestamps_recorded;
+    float timestamp_period_ns;
     bool in_aux_command_buffer;
 
     VkFramebuffer framebuffers[50];
@@ -608,6 +615,7 @@ typedef enum FinishReason {
 } FinishReason;
 
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
+void pgraph_vk_perflog_gpu_busy(double busy_ms);
 
 // draw.c
 void pgraph_vk_init_pipelines(PGRAPHState *pg);

@@ -1226,6 +1226,11 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         if (r->query_in_flight) {
             end_query(r);
         }
+        if (r->timestamps_recorded) {
+            vkCmdWriteTimestamp(r->command_buffer,
+                                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                r->timestamp_pool, 1);
+        }
         VK_CHECK(vkEndCommandBuffer(r->command_buffer));
 
         VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg); // FIXME: Cleanup
@@ -1295,6 +1300,18 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
                                        (double)waited / 1000000.0);
         }
 
+        if (r->timestamps_recorded) {
+            uint64_t stamps[2] = { 0, 0 };
+            if (vkGetQueryPoolResults(r->device, r->timestamp_pool, 0, 2,
+                                      sizeof(stamps), stamps, sizeof(stamps[0]),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS &&
+                stamps[1] > stamps[0]) {
+                pgraph_vk_perflog_gpu_busy((double)(stamps[1] - stamps[0]) *
+                                           r->timestamp_period_ns / 1000000.0);
+            }
+            r->timestamps_recorded = false;
+        }
+
         r->descriptor_set_index = 0;
         r->in_command_buffer = false;
         destroy_framebuffers(pg);
@@ -1321,6 +1338,14 @@ void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
     };
     VK_CHECK(vkBeginCommandBuffer(r->command_buffer,
                                   &command_buffer_begin_info));
+    if (r->timestamp_pool != VK_NULL_HANDLE && pgraph_vk_perflog_enabled()) {
+        vkCmdResetQueryPool(r->command_buffer, r->timestamp_pool, 0, 2);
+        vkCmdWriteTimestamp(r->command_buffer,
+                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            r->timestamp_pool, 0);
+        r->timestamps_recorded = true;
+    }
+
     r->command_buffer_start_time = pg->draw_time;
     r->in_command_buffer = true;
 }

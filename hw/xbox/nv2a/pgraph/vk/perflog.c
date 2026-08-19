@@ -100,6 +100,8 @@ static struct {
     /* Wall time the emulation thread spent blocked waiting for the GPU,
      * separated by the reason the pipeline had to be drained. */
     double gpu_wait_ms[VK_NUM_FINISH_REASONS];
+    /* Time the GPU spent executing, as reported by the GPU itself. */
+    double gpu_busy_ms;
     unsigned stutters;
 
     unsigned long stutter_lines;
@@ -173,6 +175,7 @@ void pgraph_vk_perflog_init(void)
 
     /* Wall time per frame the emulation thread spent blocked on the GPU,
      * split by what forced the pipeline to drain. */
+    fprintf(g_perflog.f, "# gpu_busy_ms (per frame): gpu_busy\n");
     fprintf(g_perflog.f, "# gpu_wait_ms (per frame):");
     for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
         fprintf(g_perflog.f, " %s", k_finish_reason_names[i]);
@@ -180,6 +183,13 @@ void pgraph_vk_perflog_init(void)
     fprintf(g_perflog.f, "\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
+}
+
+void pgraph_vk_perflog_gpu_busy(double busy_ms)
+{
+    if (g_perflog.enabled) {
+        g_perflog.gpu_busy_ms += busy_ms;
+    }
 }
 
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms)
@@ -252,6 +262,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     for (unsigned i = 0; i < NUM_COUNTERS; i++) {
         fprintf(g_perflog.f, ",%.2f", (double)g_perflog.counters[i] / n);
     }
+    fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_busy_ms / n);
     for (unsigned i = 0; i < VK_NUM_FINISH_REASONS; i++) {
         fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_wait_ms[i] / n);
     }
@@ -270,6 +281,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     g_perflog.stutters = 0;
     memset(g_perflog.counters, 0, sizeof(g_perflog.counters));
     memset(g_perflog.gpu_wait_ms, 0, sizeof(g_perflog.gpu_wait_ms));
+    g_perflog.gpu_busy_ms = 0;
     g_perflog.window_start_ns = now;
 }
 
