@@ -36,6 +36,7 @@ VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
 | 7 | Non-blocking presenter on the readback path | 16.6 fps | 6.3 fps | **reverted** — starved the upload |
 | 8 | Vulkan swapchain presentation (`XEMU_DISPLAY_BACKEND=vulkan`) | 18.0-18.4 fps, readback 10.9-11.7 ms, 1% low 7.8 | 19.4-19.9 fps, readback 0, 1% low 9.2 | kept, opt-in (+7% fps, +18% 1% low) |
 | 9 | Deferred flip-stall wait, first attempt (`XEMU_ASYNC_FLIP=1`) | 19.8 fps | 5.8 fps, assert, guest starved 1000x | **broken** — reclaim ran after next-draw allocation; fix at HEAD, untested |
+| 10 | Deferred flip-stall wait, repaired (reclaim at begin_pre_draw) | 19.6 fps, host wait 20.4 ms | 20.4 fps (within noise), host wait 10.2 ms (flip 9.70 -> 0.60), stutters/min -12%, 1% low -5%, 0 errors, guest work fair | kept opt-in — correct, but fps unchanged: **pgraph fence waits are not the frame-rate limiter** |
 
 ## Current frame budget (HEAD, Vulkan presentation, measured)
 
@@ -52,5 +53,9 @@ ideal CPU/GPU overlap    max(26.9, 17.7) ~= 27 ms  => ~37 fps ceiling
 ```
 
 Host wait ~= GPU busy: the pipeline is serialised (record -> submit -> wait).
-Reducing the waits is worth more than any GPU-side optimisation until the GPU
-stops being idle 62% of the frame.
+
+**Update (row 10):** removing half the host wait (20.4 -> 10.2 ms) left fps
+within noise. The serialisation was real but not rate-limiting: the frame is
+paced by something outside the pgraph thread's fence waits — per-thread CPU
+sampling (below, when measured) decides whether that is the TCG vCPU thread
+or pgraph's own per-draw work (~710 batches/frame).
