@@ -32,6 +32,12 @@ export XEMU_TSO=1
 # load/store group - the value is a bitmask, and lag reported in that session
 # traced straight to arithmetic still on softfloat.
 export XEMU_HARD_FPU=31
+
+# Sample render targets directly as textures instead of copying them: kills
+# ~5 full-surface copies and their layout transitions per frame. Measured
+# stutters -15%, 1% low +7%; soaked on GTA SA (60) and Morrowind (56).
+# Remove to fall back to the copy path.
+export XEMU_SURF_TEX_SAMPLE=1
 export XDG_DATA_HOME=/home/pi/.local/share
 
 # Output at 1080p rather than the display native 4K. The Xbox renders at
