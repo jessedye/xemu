@@ -1070,25 +1070,27 @@ static void display_very_early_init(DisplayOptions *o)
         SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
 
-    m_context = SDL_GL_CreateContext(m_window);
+    if (!xemu_display_backend_is_vulkan()) {
+        m_context = SDL_GL_CreateContext(m_window);
 
-    if (m_context != NULL && epoxy_gl_version() < 31) {
-        SDL_GL_MakeCurrent(NULL, NULL);
-        SDL_GL_DestroyContext(m_context);
-        m_context = NULL;
-    }
+        if (m_context != NULL && epoxy_gl_version() < 31) {
+            SDL_GL_MakeCurrent(NULL, NULL);
+            SDL_GL_DestroyContext(m_context);
+            m_context = NULL;
+        }
 
-    if (m_context == NULL) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-            "Unable to create OpenGL context",
-            "Unable to create OpenGL context. This usually means the\r\n"
-            "graphics device on this system does not support OpenGL 3.1.\r\n"
-            "\r\n"
-            "xemu cannot continue and will now exit.",
-            m_window);
-        SDL_DestroyWindow(m_window);
-        SDL_Quit();
-        exit(1);
+        if (m_context == NULL) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                "Unable to create OpenGL context",
+                "Unable to create OpenGL context. This usually means the\r\n"
+                "graphics device on this system does not support OpenGL 3.1.\r\n"
+                "\r\n"
+                "xemu cannot continue and will now exit.",
+                m_window);
+            SDL_DestroyWindow(m_window);
+            SDL_Quit();
+            exit(1);
+        }
     }
 
     int width, height, channels = 0;
