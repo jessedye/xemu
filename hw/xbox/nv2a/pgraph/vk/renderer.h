@@ -441,6 +441,13 @@ typedef struct PGRAPHVkState {
     PGRAPHVkComputeState compute;
 } PGRAPHVkState;
 
+// present.c
+VkInstance pgraph_vk_get_instance(PGRAPHState *pg);
+bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
+                            int height);
+void pgraph_vk_present_finalize(PGRAPHState *pg);
+bool pgraph_vk_present_frame(PGRAPHState *pg, int width, int height);
+
 // renderer.c
 void pgraph_vk_check_memory_budget(PGRAPHState *pg);
 
