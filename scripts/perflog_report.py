@@ -163,6 +163,11 @@ def print_summary(path):
         stalls = vtx["vtx_stalls"]
         conflict = vtx.get("vtx_conflict_pages", 0.0)
         written = vtx.get("vtx_written_pages", 0.0)
+        missed = vtx.get("vtx_missed_hazards", 0.0)
+        if missed:
+            print(f"  !! vertex hazards missed by the default guard: "
+                  f"{missed:.2f}/frame - rewrites onto pages a recorded draw "
+                  f"still reads")
         print(f"  vertex rewrite {stalls:.2f} stalls/frame, "
               f"{conflict:.1f} conflicting of {written:.1f} pages written"
               + (f" ({conflict/stalls:.1f} pages per stall)" if stalls else ""))

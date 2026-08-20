@@ -129,6 +129,10 @@ static struct {
     unsigned long vertex_stalls;
     unsigned long vertex_conflict_pages;
     unsigned long vertex_written_pages;
+    /* Rewrites landing on a page a recorded draw reads that the
+     * default guard does not flag, because the page was uploaded
+     * before the current command buffer began. */
+    unsigned long vertex_missed_hazards;
     /* Time the GPU spent executing, as reported by the GPU itself. */
     double gpu_busy_ms;
     unsigned stutters;
@@ -212,13 +216,14 @@ void pgraph_vk_perflog_init(void)
     fprintf(g_perflog.f, " aux_fence\n");
     fprintf(g_perflog.f,
             "# vertex (per frame): vtx_stalls vtx_conflict_pages "
-            "vtx_written_pages\n");
+            "vtx_written_pages vtx_missed_hazards\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
 }
 
 void pgraph_vk_perflog_vertex_write(unsigned long written_pages,
-                                    unsigned long conflict_pages, bool stalled)
+                                    unsigned long conflict_pages, bool stalled,
+                                    bool missed_hazard)
 {
     if (!g_perflog.enabled) {
         return;
@@ -227,6 +232,7 @@ void pgraph_vk_perflog_vertex_write(unsigned long written_pages,
     g_perflog.vertex_written_pages += written_pages;
     g_perflog.vertex_conflict_pages += conflict_pages;
     g_perflog.vertex_stalls += stalled ? 1 : 0;
+    g_perflog.vertex_missed_hazards += missed_hazard ? 1 : 0;
 }
 
 void pgraph_vk_perflog_aux_wait(double wait_ms)
@@ -318,10 +324,11 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
         fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_wait_ms[i] / n);
     }
     fprintf(g_perflog.f, ",%.2f", g_perflog.aux_wait_ms / n);
-    fprintf(g_perflog.f, ",%.2f,%.2f,%.2f",
+    fprintf(g_perflog.f, ",%.2f,%.2f,%.2f,%.2f",
             (double)g_perflog.vertex_stalls / n,
             (double)g_perflog.vertex_conflict_pages / n,
-            (double)g_perflog.vertex_written_pages / n);
+            (double)g_perflog.vertex_written_pages / n,
+            (double)g_perflog.vertex_missed_hazards / n);
     fprintf(g_perflog.f, "\n");
 
     if (g_perflog.dropped_samples) {
@@ -342,6 +349,7 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     g_perflog.vertex_stalls = 0;
     g_perflog.vertex_conflict_pages = 0;
     g_perflog.vertex_written_pages = 0;
+    g_perflog.vertex_missed_hazards = 0;
     g_perflog.window_start_ns = now;
 }
 

@@ -67,6 +67,7 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     }
 
     bool conflict;
+    bool missed_hazard = false;
 
     if (precise) {
         bool hits_recording =
@@ -95,6 +96,16 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     } else {
         conflict = find_next_bit(r->uploaded_bitmap, start_bit + nbits,
                                  start_bit) < end_bit;
+
+        /* A page uploaded before this command buffer began carries no upload
+         * bit, yet a draw recorded since may still be reading it. Count those:
+         * they are rewrites this guard lets through onto data the GPU has not
+         * finished with. */
+        if (!conflict && pgraph_vk_perflog_enabled()) {
+            missed_hazard =
+                find_next_bit(r->referenced_bitmap, end_bit, start_bit) <
+                end_bit;
+        }
     }
 
     if (pgraph_vk_perflog_enabled()) {
@@ -109,7 +120,8 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
             }
         }
 
-        pgraph_vk_perflog_vertex_write(nbits, overlapping, conflict);
+        pgraph_vk_perflog_vertex_write(nbits, overlapping, conflict,
+                                       missed_hazard);
     }
 
     if (conflict) {
