@@ -78,10 +78,19 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
         conflict = hits_recording;
 
         if (!hits_recording && hits_submitted) {
-            /* Only already-submitted draws read this. Letting the GPU finish is
-             * enough; the command buffer being recorded need not be broken up
-             * and sent early. */
-            pgraph_vk_wait_for_submission(pg);
+            /* Only already-submitted draws read this, so letting the GPU finish
+             * is enough and the command buffer being recorded need not be
+             * broken up and sent early.
+             *
+             * Reclaiming a submission also destroys every framebuffer, the one
+             * an open render pass is using included, so fall back to the full
+             * drain in that case - it ends the pass before anything is torn
+             * down. */
+            if (r->in_render_pass) {
+                conflict = true;
+            } else {
+                pgraph_vk_wait_for_submission(pg);
+            }
         }
     } else {
         conflict = find_next_bit(r->uploaded_bitmap, start_bit + nbits,
