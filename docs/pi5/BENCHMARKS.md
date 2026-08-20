@@ -170,6 +170,37 @@ can size them.
 
 ## Open follow-ups
 
+- **Multi-slot submission (roadmap item 4)** — now the highest-value remaining
+  item, and the only one with evidence from two different games (row 86).
+
+  Why the wait costs what it does: GPU busy is 13 ms against a 42-53 ms frame,
+  so the GPU is idle most of the time. The wait is expensive because commands
+  accumulate until a flip or a report forces a submit, and the result is needed
+  almost immediately after - so the wait is roughly the GPU execution time,
+  paid serially. Submitting earlier lets it overlap, which needs a second slot
+  to keep recording into.
+
+  `command_buffers[2]` is main + aux, not two slots. Everything
+  `pgraph_vk_wait_for_submission` reclaims has to become per-slot before a
+  second submission can be outstanding:
+
+  - `command_buffer` and `aux_command_buffer` (so `command_buffers[2 * N]`)
+  - `command_buffer_fence`, `aux_command_buffer_fence`, `command_buffer_semaphore`
+  - `descriptor_set_index` — the pool range in use
+  - staging offsets in BUFFER_*_STAGING (index, inline-vertex, uniform)
+  - `uploaded_bitmap` and `referenced_inflight_bitmap` — the vertex-RAM guard
+    reads these to decide whether an in-flight draw still references a page
+  - the framebuffer list `destroy_framebuffers` walks
+  - the timestamp query pool (currently 2 slots, one pair per submission)
+  - `pgraph_vk_process_pending_reports_internal`, which currently runs from the
+    wait and assumes the results it reads belong to the submission just retired
+
+  Risk: this is the area that produced the framebuffer-lifetime bug, and the
+  vertex-RAM guard is a correctness feature, not a performance one. Bisectable
+  order: fences/command buffers first (no behaviour change with N=1), then
+  descriptor and staging ranges, then the bitmaps, then raise N. Soak rather
+  than A/B - a race here shows as corruption, not as a slower number.
+
 - **Upstream `vk/present.c`** — the Vulkan swapchain presentation path is the
   one genuinely new file this work adds to the renderer (everything else is
   edits to existing files; upstream already ships a full Vulkan renderer).
