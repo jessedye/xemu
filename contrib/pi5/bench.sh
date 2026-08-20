@@ -16,6 +16,9 @@
 #       the perflog cannot
 #   -B  binary to run (default: the freshly built one). Set this to a saved
 #       copy to A/B a change that is not switchable at runtime.
+#   -x  snapshot to resume from, so both arms of an A/B start from identical
+#       guest state. Without this the arms land wherever the intro happened to
+#       be, and a scene difference reads as a performance difference.
 #
 # Ground rules encoded here so a run cannot violate them:
 #   - refuses to start if xemu is already running (someone may be playing)
@@ -24,13 +27,13 @@
 #   - X server locks are cleaned up on exit
 set -uo pipefail
 
-TAG="" BACKEND=gl ASYNC=0 MODE=1080p SECS=175 REFERENCE=""
+TAG="" BACKEND=gl ASYNC=0 MODE=1080p SECS=175 REFERENCE="" SNAPSHOT=""
 ISO="/home/pi/RetroPie/roms/xbox/Halo 2 (XBCLASSICRP).iso"
 BIN=/home/pi/xemu-build/dist/xemu
 CFG=/home/pi/.local/share/xemu/xemu/xemu.toml
 OUT=/home/pi/bench
 
-while getopts "t:b:am:s:i:r:B:" o; do
+while getopts "t:b:am:s:i:r:B:x:" o; do
     case $o in
         t) TAG=$OPTARG ;;
         b) BACKEND=$OPTARG ;;
@@ -40,6 +43,7 @@ while getopts "t:b:am:s:i:r:B:" o; do
         i) ISO=$OPTARG ;;
         r) REFERENCE=$OPTARG ;;
         B) BIN=$OPTARG ;;
+        x) SNAPSHOT=$OPTARG ;;
         *) exit 2 ;;
     esac
 done
@@ -85,7 +89,8 @@ ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1)
 } > "$OUT/$TAG.meta"
 
 env "${ENV[@]}" timeout -s KILL "$SECS" "$BIN" \
-    -config_path "$CFG" -dvd_path "$ISO" > "$OUT/$TAG.log" 2>&1 &
+    -config_path "$CFG" -dvd_path "$ISO" ${SNAPSHOT:+-loadvm "$SNAPSHOT"} \
+    > "$OUT/$TAG.log" 2>&1 &
 XEMU_PID=$!
 
 # Capture a frame once the guest is past boot, so a mirrored or corrupted
