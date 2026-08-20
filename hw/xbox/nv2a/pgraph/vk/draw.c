@@ -1780,6 +1780,15 @@ static void sync_vertex_ram_buffer(PGRAPHState *pg)
 
         NV2A_VK_DPRINTF("- %d: %08"HWADDR_PRIx" %zd bytes", i, addr, size);
 
+        /* A hot range is not mirrored at all - remap_unaligned_attributes
+         * routes every attribute in it through the inline ring, reading guest
+         * RAM directly, so mirroring it would only reintroduce the collision
+         * this avoids. Both sides key off the same bucket test, so they cannot
+         * disagree about which ranges are mirrored. */
+        if (pgraph_vk_vertex_offset_is_hot(r, addr)) {
+            continue;
+        }
+
         if (memory_region_test_and_clear_dirty(d->vram, addr, size,
                                                DIRTY_MEMORY_NV2A)) {
             NV2A_VK_DPRINTF("Memory dirty. Synchronizing...");
@@ -1795,6 +1804,10 @@ static void sync_vertex_ram_buffer(PGRAPHState *pg)
     for (int i = 0; i < num_syncs; i++) {
         size_t start_bit = merged[i].addr / TARGET_PAGE_SIZE;
         size_t nbits = merged[i].size / TARGET_PAGE_SIZE;
+
+        if (pgraph_vk_vertex_offset_is_hot(r, merged[i].addr)) {
+            continue;
+        }
 
         bitmap_set(r->referenced_bitmap, start_bit, nbits);
     }
@@ -2098,8 +2111,10 @@ static VertexBufferRemap remap_unaligned_attributes(PGRAPHState *pg,
         bool offset_valid =
             (r->vertex_attribute_offsets[attr_id] % element_size == 0);
         bool stride_valid = (desc->stride % element_size == 0);
+        bool hot = pgraph_vk_vertex_offset_is_hot(
+            r, r->vertex_attribute_offsets[attr_id]);
 
-        if (offset_valid && stride_valid) {
+        if (offset_valid && stride_valid && !hot) {
             continue;
         }
 

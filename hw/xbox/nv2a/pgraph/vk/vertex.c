@@ -42,6 +42,55 @@ VkDeviceSize pgraph_vk_update_vertex_inline_buffer(PGRAPHState *pg, void **data,
                                       sizes, count, 1);
 }
 
+/* Repeatedly rewritten regions are taken out of the mirror and fetched from
+ * guest RAM per draw instead. The threshold keeps a region that merely collides
+ * once or twice on the cheaper mirrored path. */
+#define VERTEX_HOT_THRESHOLD 64
+
+static bool pgraph_vk_hot_remap_enabled(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("XEMU_VTX_HOT_REMAP") != NULL;
+        if (cached) {
+            fprintf(stderr, "vk: hot vertex regions fetched per draw\n");
+        }
+    }
+    return cached == 1;
+}
+
+bool pgraph_vk_vertex_offset_is_hot(PGRAPHVkState *r, hwaddr offset)
+{
+    if (!pgraph_vk_hot_remap_enabled()) {
+        return false;
+    }
+
+    VkDeviceSize span = r->storage_buffers[BUFFER_VERTEX_RAM].buffer_size;
+    if (!span) {
+        return false;
+    }
+
+    unsigned bucket = (unsigned)(((uint64_t)offset * VERTEX_HOT_BUCKETS) / span);
+    return bucket < VERTEX_HOT_BUCKETS && r->vertex_bucket_hot[bucket];
+}
+
+static void note_vertex_conflict(PGRAPHVkState *r, hwaddr offset)
+{
+    VkDeviceSize span = r->storage_buffers[BUFFER_VERTEX_RAM].buffer_size;
+    if (!span) {
+        return;
+    }
+
+    unsigned bucket = (unsigned)(((uint64_t)offset * VERTEX_HOT_BUCKETS) / span);
+    if (bucket >= VERTEX_HOT_BUCKETS || r->vertex_bucket_hot[bucket]) {
+        return;
+    }
+
+    if (++r->vertex_bucket_conflicts[bucket] >= VERTEX_HOT_THRESHOLD) {
+        r->vertex_bucket_hot[bucket] = true;
+    }
+}
+
 void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
                                         void *data, VkDeviceSize size)
 {
@@ -126,9 +175,13 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
                                        missed_hazard);
     }
 
-    if (conflict && pgraph_vk_perflog_enabled()) {
-        pgraph_vk_perflog_vertex_conflict_at(
-            offset, r->storage_buffers[BUFFER_VERTEX_RAM].buffer_size);
+    if (conflict) {
+        note_vertex_conflict(r, offset);
+
+        if (pgraph_vk_perflog_enabled()) {
+            pgraph_vk_perflog_vertex_conflict_at(
+                offset, r->storage_buffers[BUFFER_VERTEX_RAM].buffer_size);
+        }
     }
 
     if (conflict) {

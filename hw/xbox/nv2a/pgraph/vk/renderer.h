@@ -425,6 +425,15 @@ typedef struct PGRAPHVkState {
      * so individual queries need no reset of their own and can therefore
      * begin without leaving the render pass. */
     bool query_pool_reset;
+    /* Guest vertex memory divided into fixed buckets, counting how often each
+     * one is rewritten under a recorded draw. Conflicts are not spread evenly:
+     * in Morrowind five buckets of sixty-four see any at all and one holds two
+     * thirds, which is a dynamic vertex buffer being recycled. Such a bucket is
+     * better fetched straight from guest RAM per draw than mirrored, since the
+     * mirror is what the stall defends. */
+#define VERTEX_HOT_BUCKETS 64
+    unsigned vertex_bucket_conflicts[VERTEX_HOT_BUCKETS];
+    bool vertex_bucket_hot[VERTEX_HOT_BUCKETS];
     unsigned long *referenced_bitmap;
     unsigned long *referenced_inflight_bitmap;
     size_t bitmap_size;
@@ -648,6 +657,7 @@ void pgraph_vk_process_pending_reports_internal(NV2AState *d);
 void pgraph_vk_perflog_gpu_wait(FinishReason why, double wait_ms);
 void pgraph_vk_perflog_gpu_busy(double busy_ms);
 void pgraph_vk_perflog_aux_wait(double wait_ms);
+bool pgraph_vk_vertex_offset_is_hot(PGRAPHVkState *r, hwaddr offset);
 void pgraph_vk_perflog_vertex_conflict_at(uint64_t offset, uint64_t vram_size);
 void pgraph_vk_perflog_vertex_write(unsigned long written_pages,
                                     unsigned long conflict_pages,
