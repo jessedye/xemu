@@ -1307,6 +1307,12 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
             check_budget = true;
         }
 
+        /* Those reads now belong to a submitted command buffer rather than one
+         * being recorded. */
+        bitmap_or(r->referenced_inflight_bitmap, r->referenced_inflight_bitmap,
+                  r->referenced_bitmap, r->bitmap_size);
+        bitmap_clear(r->referenced_bitmap, 0, r->bitmap_size);
+
         r->in_command_buffer = false;
         r->submission_in_flight = true;
         r->in_flight_reason = finish_reason;
@@ -1366,6 +1372,7 @@ void pgraph_vk_wait_for_submission(PGRAPHState *pg)
     r->descriptor_set_index = 0;
     r->submission_in_flight = false;
     bitmap_clear(r->uploaded_bitmap, 0, r->bitmap_size);
+    bitmap_clear(r->referenced_inflight_bitmap, 0, r->bitmap_size);
     destroy_framebuffers(pg);
 
     if (r->check_budget_on_wait) {
@@ -1735,6 +1742,17 @@ static void sync_vertex_ram_buffer(PGRAPHState *pg)
             pgraph_vk_update_vertex_ram_buffer(pg, addr, d->vram_ptr + addr,
                                                size);
         }
+    }
+
+    /* Record what the draw about to be recorded reads, so a later rewrite can
+     * tell a page a draw depends on from one that merely happens to have been
+     * uploaded. Done after the uploads above so a range does not collide with
+     * its own mark. */
+    for (int i = 0; i < num_syncs; i++) {
+        size_t start_bit = merged[i].addr / TARGET_PAGE_SIZE;
+        size_t nbits = merged[i].size / TARGET_PAGE_SIZE;
+
+        bitmap_set(r->referenced_bitmap, start_bit, nbits);
     }
 
     r->num_vertex_ram_buffer_syncs = 0;

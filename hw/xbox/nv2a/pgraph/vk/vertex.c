@@ -53,8 +53,40 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
 
-    bool conflict = find_next_bit(r->uploaded_bitmap, start_bit + nbits,
-                                  start_bit) < end_bit;
+    /* Default behaviour drains whenever the write lands on a page that was
+     * uploaded, whether or not a draw ever read it. Tracking what draws
+     * actually reference narrows that to the writes that can really corrupt a
+     * recorded draw, and splits the rest into a cheaper wait. Opt in with
+     * XEMU_VTX_PRECISE while it is being measured. */
+    static int precise = -1;
+    if (precise < 0) {
+        precise = getenv("XEMU_VTX_PRECISE") != NULL;
+        if (precise) {
+            fprintf(stderr, "vk: precise vertex rewrite tracking\n");
+        }
+    }
+
+    bool conflict;
+
+    if (precise) {
+        bool hits_recording =
+            find_next_bit(r->referenced_bitmap, end_bit, start_bit) < end_bit;
+        bool hits_submitted =
+            find_next_bit(r->referenced_inflight_bitmap, end_bit, start_bit) <
+            end_bit;
+
+        conflict = hits_recording;
+
+        if (!hits_recording && hits_submitted) {
+            /* Only already-submitted draws read this. Letting the GPU finish is
+             * enough; the command buffer being recorded need not be broken up
+             * and sent early. */
+            pgraph_vk_wait_for_submission(pg);
+        }
+    } else {
+        conflict = find_next_bit(r->uploaded_bitmap, start_bit + nbits,
+                                 start_bit) < end_bit;
+    }
 
     if (pgraph_vk_perflog_enabled()) {
         /* How much of this write actually collides decides the shape of any

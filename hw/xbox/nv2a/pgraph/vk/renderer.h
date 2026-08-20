@@ -416,6 +416,13 @@ typedef struct PGRAPHVkState {
     MemorySyncRequirement vertex_ram_buffer_syncs[NV2A_VERTEXSHADER_ATTRIBUTES];
     size_t num_vertex_ram_buffer_syncs;
     unsigned long *uploaded_bitmap;
+    /* Pages a recorded draw actually reads, which is not the same set as
+     * the pages that were uploaded: the guest can rewrite vertex data no
+     * draw ever referenced. Split by whether the reader is still being
+     * recorded or is already submitted, because the two need different
+     * treatment. */
+    unsigned long *referenced_bitmap;
+    unsigned long *referenced_inflight_bitmap;
     size_t bitmap_size;
 
     VkVertexInputAttributeDescription vertex_attribute_descriptions[NV2A_VERTEXSHADER_ATTRIBUTES];
