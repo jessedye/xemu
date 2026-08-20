@@ -383,6 +383,14 @@ void xemu_hud_init_vulkan(void *window, const XemuHudVulkanInfo *info)
     (void)window;
     g_hud_uses_vulkan = true;
 
+    /* The backend is built without prototypes so it cannot collide with volk's
+     * globals, which leaves it needing the entry points handed to it. */
+    ImGui_ImplVulkan_LoadFunctions(
+        [](const char *name, void *user) {
+            return vkGetInstanceProcAddr((VkInstance)user, name);
+        },
+        info->instance);
+
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = info->instance;
     init_info.PhysicalDevice = info->physical_device;

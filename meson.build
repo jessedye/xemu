@@ -3,6 +3,13 @@ project('qemu', ['c', 'cpp'], meson_version: '>=1.5.0',
                           'b_staticpic=false', 'stdsplit=false', 'optimization=2', 'b_pie=true'],
         version: files('QEMU_VERSION'))
 
+# volk resolves every Vulkan entry point at runtime, so its function-pointer
+# globals must be the only declarations in the program. A translation unit that
+# pulls in the real prototypes collides with them once LTO merges the two.
+add_global_arguments('-DVK_NO_PROTOTYPES',
+                     '-DIMGUI_IMPL_VULKAN_NO_PROTOTYPES',
+                     language: ['c', 'cpp'])
+
 meson.add_devenv({ 'MESON_BUILD_ROOT' : meson.project_build_root() })
 
 add_test_setup('quick', exclude_suites: ['slow', 'thorough'], is_default: true,

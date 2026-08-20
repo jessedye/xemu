@@ -30,6 +30,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_opengl3.h>
 #ifdef CONFIG_VULKAN
+#include <volk.h>
 #include <imgui_impl_vulkan.h>
 #endif
 #include <implot.h>

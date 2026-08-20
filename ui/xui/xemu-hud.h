@@ -44,7 +44,7 @@ void xemu_hud_init(SDL_Window *window, void *sdl_gl_context);
 void xemu_hud_init_input_only(SDL_Window *window);
 
 #ifdef CONFIG_VULKAN
-#include <vulkan/vulkan.h>
+#include <volk.h>
 /* Handles the presenter owns, passed across so the overlay can draw into the
  * swapchain image it already blitted the guest frame into. */
 typedef struct XemuHudVulkanInfo {
