@@ -13,6 +13,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "ui/xui/xemu-hud.h"
 #include "renderer.h"
 
 typedef struct PresentState {
@@ -328,14 +329,14 @@ bool pgraph_vk_present_init(PGRAPHState *pg, void *window,
     VkDescriptorPoolSize pool_size = {
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64
     };
-    VkDescriptorPoolCreateInfo pool_info = {
+    VkDescriptorPoolCreateInfo descriptor_pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = 64,
         .poolSizeCount = 1,
         .pPoolSizes = &pool_size,
     };
-    VK_CHECK(vkCreateDescriptorPool(r->device, &pool_info, NULL,
+    VK_CHECK(vkCreateDescriptorPool(r->device, &descriptor_pool_info, NULL,
                                     &g_present.descriptor_pool));
 
     create_overlay_targets(r);
