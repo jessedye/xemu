@@ -156,6 +156,19 @@ void pgraph_vk_process_pending_reports(NV2AState *d)
     if (*dma_get == *dma_put &&
         (r->in_command_buffer || r->submission_in_flight) &&
         !QSIMPLEQ_EMPTY(&r->report_queue)) {
-        pgraph_vk_finish(pg, VK_FINISH_REASON_STALLED);
+        /* UNSAFE measurement switch, off by default. This stall is the single
+         * largest host wait in the frame (9.9 ms/frame, 88% of all waits) and
+         * removing it properly needs more than one submission in flight.
+         * Skipping it hands the guest stale occlusion results, which is wrong,
+         * but it prices the ceiling before that refactor is written - the same
+         * way XEMU_WEAK_MO priced the memory-ordering fences. */
+        static int skip = -1;
+        if (skip < 0) {
+            const char *e = getenv("XEMU_NO_REPORT_STALL");
+            skip = e && *e == '1';
+        }
+        if (!skip) {
+            pgraph_vk_finish(pg, VK_FINISH_REASON_STALLED);
+        }
     }
 }
