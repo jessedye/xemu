@@ -11,6 +11,9 @@
 #   -m  output mode: 1080p (default; xrandr to 1920x1080) or native
 #   -s  bounded run length in seconds (default 175)
 #   -i  disc image (default: the Halo 2 benchmark ISO)
+#   -r  reference PNG: capture a frame mid-run and check it against this
+#       with scripts/frame_check.py, which sees flips and corruption that
+#       the perflog cannot
 #
 # Ground rules encoded here so a run cannot violate them:
 #   - refuses to start if xemu is already running (someone may be playing)
@@ -19,13 +22,13 @@
 #   - X server locks are cleaned up on exit
 set -uo pipefail
 
-TAG="" BACKEND=gl ASYNC=0 MODE=1080p SECS=175
+TAG="" BACKEND=gl ASYNC=0 MODE=1080p SECS=175 REFERENCE=""
 ISO="/home/pi/RetroPie/roms/xbox/Halo 2 (XBCLASSICRP).iso"
 BIN=/home/pi/xemu-build/dist/xemu
 CFG=/home/pi/.local/share/xemu/xemu/xemu.toml
 OUT=/home/pi/bench
 
-while getopts "t:b:am:s:i:" o; do
+while getopts "t:b:am:s:i:r:" o; do
     case $o in
         t) TAG=$OPTARG ;;
         b) BACKEND=$OPTARG ;;
@@ -33,6 +36,7 @@ while getopts "t:b:am:s:i:" o; do
         m) MODE=$OPTARG ;;
         s) SECS=$OPTARG ;;
         i) ISO=$OPTARG ;;
+        r) REFERENCE=$OPTARG ;;
         *) exit 2 ;;
     esac
 done
@@ -78,5 +82,20 @@ ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1)
 } > "$OUT/$TAG.meta"
 
 env "${ENV[@]}" timeout -s KILL "$SECS" "$BIN" \
-    -config_path "$CFG" -dvd_path "$ISO" > "$OUT/$TAG.log" 2>&1
+    -config_path "$CFG" -dvd_path "$ISO" > "$OUT/$TAG.log" 2>&1 &
+XEMU_PID=$!
+
+# Capture a frame once the guest is past boot, so a mirrored or corrupted
+# picture is caught even though every timing number looks healthy.
+if [ -n "$REFERENCE" ]; then
+    sleep $((SECS / 3))
+    import -window root "$OUT/$TAG.png" 2>/dev/null
+fi
+wait "$XEMU_PID"
+
+if [ -n "$REFERENCE" ] && [ -f "$OUT/$TAG.png" ]; then
+    echo "frame check against $(basename "$REFERENCE"):"
+    python3 "$(dirname "$0")/../../scripts/frame_check.py" \
+        "$OUT/$TAG.png" "$REFERENCE" || true
+fi
 echo "run complete: $OUT/$TAG.csv"
