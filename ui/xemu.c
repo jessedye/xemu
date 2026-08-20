@@ -1479,9 +1479,28 @@ int main(int argc, char **argv)
     xemu_main_loop_unlock();
 
     struct xemu_console *scon = &scon_list[0];
+    int64_t next_present = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+
     while (!qatomic_read(&qemu_exiting)) {
         poll_events(scon);
         if (xemu_display_backend_is_vulkan()) {
+            /* The OpenGL path is paced by SDL_GL_SwapWindow blocking on
+             * vblank. Mailbox presentation never blocks, so without a deadline
+             * of its own this loop free-runs: it would rebuild the interface
+             * and drive a composite-and-present round trip on the renderer
+             * thread far more often than the display can show them, taking CPU
+             * and the lock away from the emulated machine. The guest cannot
+             * produce frames faster than its own vblank, so pace to that. */
+            int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+
+            next_present += vblank_interval_ns;
+            if (now < next_present) {
+                SDL_DelayPrecise(next_present - now);
+            } else if (now > next_present + (int64_t)vblank_interval_ns) {
+                /* More than a frame behind; resync rather than burst. */
+                next_present = now;
+            }
+
             vk_render_frame(scon);
         } else {
             gl_render_frame(scon);
