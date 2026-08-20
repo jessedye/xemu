@@ -1,11 +1,14 @@
 # N64 hi-res texture packs on a 2 GB Pi 5
 
-## HD works, 4K does not
+## HD works; 4K works only with hi-res VRAM bounded
 
 | Tier | Result |
 |---|---|
 | HD | Stable. Ocarina (9.5 GB pack) plateaus at 286 MB resident, Majora (3.9 GB) at 307 MB, both flat over six minutes with 1.2 GB free. |
 | 4K | Fails. Ocarina (30 GB) OOM-killed system daemons during real play and RetroArch segfaulted. Majora (22 GB) with the texture cache bounded to 1500 produced 12 OOM kills and died after 200 s. |
+
+This table describes the **unbounded** default, `MaxHiResTxVramLimit = 0`.
+See the correction at the end: bounding it makes 4K work.
 
 Reducing `MaxTxCacheSize` does not rescue 4K, and the measurement says why:
 
@@ -75,3 +78,41 @@ not the hi-res pack, and neither one is where the memory goes.
 
 Pack size remains the only predictor - 302 MB and 2.1 GB load, 22 GB and 30 GB
 do not. The only untried lever is a pack rebuilt with fewer textures.
+
+## Correction: 4K does work, with hi-res VRAM bounded
+
+The conclusion above was wrong about the cause being out of reach. It was drawn
+from `MaxTxCacheSize`, which the core documents as *"Set Max texture cache size
+(in elements)"* - a count of RAM cache entries. It never governed the GPU side.
+
+`MaxHiResTxVramLimit` does: *"Limit High-Res textures size in VRAM (in MB,
+0 = no limit)"*. It had been sitting at its default of 0 - unlimited - the whole
+time, which is precisely why Shmem climbed until the OOM killer intervened.
+The smallest value the core offers is 500.
+
+Majora's 21 GB 4K pack, same scene, same duration:
+
+| `MaxHiResTxVramLimit` | Shmem | Outcome |
+|---|---|---|
+| 0 (unlimited) | 143 -> 1211 MB, climbing | dead at 140 s, 6 OOM kills |
+| 500 | plateaus ~600 MB, flat | survived 240 s, 0 OOM kills |
+
+A plateau alone would also be consistent with the cap silently starving hi-res
+loading, which would make the survival worthless. It does not - same cap, same
+game, same 120 s:
+
+| Tier | Shmem delta |
+|---|---|
+| HD | +190 MB |
+| 4K | +660 MB |
+
+3.5x more texture data resident on 4K, so the pack is genuinely loading and the
+cap is bounding runaway growth rather than suppressing it.
+
+The zram refutation above is what led here: proving the memory was pinned GPU
+buffers rather than anything swappable is what redirected the search from cache
+sizing to a GPU-side limit.
+
+Cost of the cap: textures are evicted and reloaded during play, so expect some
+pop-in or hitching that HD does not have. That is the price of fitting 4K into
+2 GB.
