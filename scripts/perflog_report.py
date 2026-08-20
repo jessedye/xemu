@@ -100,10 +100,10 @@ def aggregate(run):
         for i, name in enumerate(run["waits"]):
             if pos + i < len(extra):
                 out["wait"][name] = out["wait"].get(name, 0.0) + _fl(extra[pos + i])
-            pos += nw
-            for i, name in enumerate(run["vertex"]):
-                if pos + i < len(extra):
-                    out["vertex"][name] = out["vertex"].get(name, 0.0) + _fl(extra[pos + i])
+        pos += nw
+        for j, name in enumerate(run["vertex"]):
+            if pos + j < len(extra):
+                out["vertex"][name] = out["vertex"].get(name, 0.0) + _fl(extra[pos + j])
     n = len(W)
     out["counter"] = {k: v / n for k, v in out["counter"].items()}
     out["wait"] = {k: v / n for k, v in out["wait"].items()}
