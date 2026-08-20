@@ -1208,10 +1208,6 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
                  surface->color && surface != r->color_binding &&
                  vkf.vk_format == surface->host_fmt.vk_format;
 
-    if (alias) {
-        surface->sampled_time = pg->draw_time;
-    }
-
     /* The copy path's transitions doubled as the write-to-sample barrier;
      * a direct alias of a surface drawn in this command buffer needs an
      * explicit one. */
