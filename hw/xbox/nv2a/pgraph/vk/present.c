@@ -540,7 +540,12 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
 
     VK_CHECK(vkEndCommandBuffer(g_present.command_buffer));
 
-    VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    /* The blit writes at TRANSFER and the interface writes at colour
+     * attachment output; the two stages are unordered with respect to each
+     * other, so the acquire has to gate both. */
+    VkPipelineStageFlags wait_stage =
+        VK_PIPELINE_STAGE_TRANSFER_BIT |
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 1,
