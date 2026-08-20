@@ -122,6 +122,13 @@ static struct {
     /* Fence waits on auxiliary one-shot submissions (uploads, copies,
      * display); previously invisible, hidden inside plain host time. */
     double aux_wait_ms;
+    /* Vertex RAM rewrites that hit data a recorded draw still reads, and how
+     * wide those conflicts are. The wait time alone cannot tell a few costly
+     * stalls apart from many cheap ones, and the page count says whether a
+     * narrow scratch region would absorb them. */
+    unsigned long vertex_stalls;
+    unsigned long vertex_conflict_pages;
+    unsigned long vertex_written_pages;
     /* Time the GPU spent executing, as reported by the GPU itself. */
     double gpu_busy_ms;
     unsigned stutters;
@@ -203,8 +210,23 @@ void pgraph_vk_perflog_init(void)
         fprintf(g_perflog.f, " %s", k_finish_reason_names[i]);
     }
     fprintf(g_perflog.f, " aux_fence\n");
+    fprintf(g_perflog.f,
+            "# vertex (per frame): vtx_stalls vtx_conflict_pages "
+            "vtx_written_pages\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
+}
+
+void pgraph_vk_perflog_vertex_write(unsigned long written_pages,
+                                    unsigned long conflict_pages, bool stalled)
+{
+    if (!g_perflog.enabled) {
+        return;
+    }
+
+    g_perflog.vertex_written_pages += written_pages;
+    g_perflog.vertex_conflict_pages += conflict_pages;
+    g_perflog.vertex_stalls += stalled ? 1 : 0;
 }
 
 void pgraph_vk_perflog_aux_wait(double wait_ms)
@@ -296,6 +318,10 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
         fprintf(g_perflog.f, ",%.2f", g_perflog.gpu_wait_ms[i] / n);
     }
     fprintf(g_perflog.f, ",%.2f", g_perflog.aux_wait_ms / n);
+    fprintf(g_perflog.f, ",%.2f,%.2f,%.2f",
+            (double)g_perflog.vertex_stalls / n,
+            (double)g_perflog.vertex_conflict_pages / n,
+            (double)g_perflog.vertex_written_pages / n);
     fprintf(g_perflog.f, "\n");
 
     if (g_perflog.dropped_samples) {
@@ -313,6 +339,9 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
     memset(g_perflog.gpu_wait_ms, 0, sizeof(g_perflog.gpu_wait_ms));
     g_perflog.gpu_busy_ms = 0;
     g_perflog.aux_wait_ms = 0;
+    g_perflog.vertex_stalls = 0;
+    g_perflog.vertex_conflict_pages = 0;
+    g_perflog.vertex_written_pages = 0;
     g_perflog.window_start_ns = now;
 }
 

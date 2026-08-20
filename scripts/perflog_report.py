@@ -18,7 +18,7 @@ import sys
 
 
 def load(path):
-    counters, waits, has_busy = [], [], False
+    counters, waits, vertex, has_busy = [], [], [], False
     windows, stutters, events = [], [], []
     with open(path) as f:
         for line in f:
@@ -28,6 +28,8 @@ def load(path):
                     counters = line.split(":", 1)[1].split()
                 elif "gpu_wait_ms (per frame):" in line:
                     waits = line.split(":", 1)[1].split()
+                elif "vertex (per frame):" in line:
+                    vertex = line.split(":", 1)[1].split()
                 elif "gpu_busy_ms" in line:
                     has_busy = True
                 continue
@@ -43,6 +45,7 @@ def load(path):
         "path": path,
         "counters": counters,
         "waits": waits,
+        "vertex": vertex,
         "has_busy": has_busy,
         "windows": windows,
         "stutters": stutters,
@@ -83,7 +86,7 @@ def aggregate(run):
     out["res"] = sorted({w[13] for w in W if len(w) > 13})
 
     nc, nw = len(run["counters"]), len(run["waits"])
-    out["counter"], out["wait"] = {}, {}
+    out["counter"], out["wait"], out["vertex"] = {}, {}, {}
     out["gpu_busy"] = None
     for w in W:
         extra = w[16:]
@@ -97,9 +100,14 @@ def aggregate(run):
         for i, name in enumerate(run["waits"]):
             if pos + i < len(extra):
                 out["wait"][name] = out["wait"].get(name, 0.0) + _fl(extra[pos + i])
+            pos += nw
+            for i, name in enumerate(run["vertex"]):
+                if pos + i < len(extra):
+                    out["vertex"][name] = out["vertex"].get(name, 0.0) + _fl(extra[pos + i])
     n = len(W)
     out["counter"] = {k: v / n for k, v in out["counter"].items()}
     out["wait"] = {k: v / n for k, v in out["wait"].items()}
+    out["vertex"] = {k: v / n for k, v in out["vertex"].items()}
     if out["gpu_busy"] is not None:
         out["gpu_busy"] /= n
     return out
@@ -142,6 +150,15 @@ def print_summary(path):
         for k, v in sorted(agg["wait"].items(), key=lambda kv: -kv[1]):
             if v >= 0.05:
                 print(f"      {k:<22}{v:6.2f}")
+    vtx = agg.get("vertex") or {}
+    if vtx.get("vtx_stalls"):
+        stalls = vtx["vtx_stalls"]
+        conflict = vtx.get("vtx_conflict_pages", 0.0)
+        written = vtx.get("vtx_written_pages", 0.0)
+        print(f"  vertex rewrite {stalls:.2f} stalls/frame, "
+              f"{conflict:.1f} conflicting of {written:.1f} pages written"
+              + (f" ({conflict/stalls:.1f} pages per stall)" if stalls else ""))
+
     if agg["gpu_busy"] is not None and agg["wait"]:
         host_work = agg["p50_ms"] - tot
         print(f"  overlap model p50 {agg['p50_ms']:.1f} = host-work ~{host_work:.1f} + wait {tot:.2f}; "
@@ -198,6 +215,10 @@ def print_compare(pa, pb):
         av, bv = a["wait"].get(k, 0.0), b["wait"].get(k, 0.0)
         if max(av, bv) >= 0.05:
             rows.append(("wait:" + k, av, bv, False, "~"))
+    for k in sorted(set(a.get("vertex", {})) | set(b.get("vertex", {}))):
+        av, bv = a.get("vertex", {}).get(k, 0.0), b.get("vertex", {}).get(k, 0.0)
+        if av or bv:
+            rows.append((k, av, bv, False, "~"))
     print(f"{'metric':<26}{'before':>10}{'after':>10}{'delta':>10}  verdict")
     for name, av, bv, hib, vv in rows:
         d = bv - av

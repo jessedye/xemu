@@ -53,29 +53,29 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
 
-    if (getenv("XEMU_TRACE_VERTEX_DIRTY")) {
-        static unsigned long n, next = 1;
-        if (++n >= next) {
-            size_t overlapping = 0;
+    bool conflict = find_next_bit(r->uploaded_bitmap, start_bit + nbits,
+                                  start_bit) < end_bit;
+
+    if (pgraph_vk_perflog_enabled()) {
+        /* How much of this write actually collides decides the shape of any
+         * fix: a couple of pages can be absorbed by a scratch region, a wide
+         * overlap cannot. Counted only while logging, since it is O(pages). */
+        unsigned long overlapping = 0;
+
+        if (conflict) {
             for (size_t b = start_bit; b < end_bit; b++) {
-                if (test_bit(b, r->uploaded_bitmap)) {
-                    overlapping++;
-                }
+                overlapping += test_bit(b, r->uploaded_bitmap) ? 1 : 0;
             }
-            fprintf(stderr,
-                    "xtrace: vertex_sync count=%lu size=%zu pages=%zu "
-                    "overlapping=%zu\n",
-                    n, (size_t)size, nbits, overlapping);
-            next *= 10;
         }
+
+        pgraph_vk_perflog_vertex_write(nbits, overlapping, conflict);
     }
 
-    if (find_next_bit(r->uploaded_bitmap, start_bit + nbits, start_bit) <
-        end_bit) {
-        /* Vertex data changed under recorded draws — drawn or in flight; the
+    if (conflict) {
+        /* Vertex data changed under recorded draws - drawn or in flight; the
          * bitmap is cleared only when the submission is reclaimed, so this
          * guard covers the deferred window too. Settle before touching the
-         * memory. Writes to pages no draw referenced fall through freely. */
+         * memory. */
         pgraph_vk_finish(pg, VK_FINISH_REASON_VERTEX_BUFFER_DIRTY);
     }
 
