@@ -152,10 +152,11 @@ def print_summary(path):
                 print(f"      {k:<22}{v:6.2f}")
     draws = agg["counter"].get("begin_ends", 0.0)
     if agg["counter"]:
-        # Counters are averaged per presented frame, and the UI presents faster
-        # than the guest draws, so this is not comparable to a guest draw-call
-        # count. Only near-zero is unambiguous: nothing is being drawn at all.
-        scene = " (STATIC SCREEN - nothing is being drawn)" if draws < 1.0 else ""
+        # Calibrated against four real gameplay sessions: THPS3 283, Halo 308,
+        # Morrowind 478, GTA SA 585 batches per presented frame. Morrowind's
+        # attract demo, which looks like gameplay in a screenshot, runs 4.7.
+        scene = ("" if draws >= 50.0 else
+                 " (NOT GAMEPLAY - real play measures 283-585)")
         print(f"  scene         {draws:.1f} draw batches per presented frame{scene}")
 
     vtx = agg.get("vertex") or {}
@@ -229,10 +230,12 @@ def print_compare(pa, pb):
     print()
     da = a["counter"].get("begin_ends", 0.0)
     db = b["counter"].get("begin_ends", 0.0)
-    if a["counter"] and b["counter"] and max(da, db) < 1.0:
-        print(f"  !! STATIC SCREEN: {da:.1f}/{db:.1f} draw batches per presented frame.")
-        print("     Nothing is being drawn, so this pair measures the presenter, not")
-        print("     the renderer. Re-run from a gameplay snapshot.")
+    if a["counter"] and b["counter"] and max(da, db) < 50.0:
+        print(f"  !! NOT GAMEPLAY: {da:.1f}/{db:.1f} draw batches per presented frame,")
+        print("     against 283-585 measured in real play. A menu or attract demo")
+        print("     barely exercises the renderer - notably it shows no vertex stall")
+        print("     at all, which is the cost that separates the slow games from the")
+        print("     fast one. Re-run from a gameplay snapshot.")
 
     v = verdict(a["fps"], b["fps"], a["fps_sd"], b["fps_sd"], a["n_windows"], b["n_windows"])
     rows = [("fps", a["fps"], b["fps"], True, v)]
