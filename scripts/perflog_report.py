@@ -152,10 +152,11 @@ def print_summary(path):
                 print(f"      {k:<22}{v:6.2f}")
     draws = agg["counter"].get("begin_ends", 0.0)
     if agg["counter"]:
-        scene = ("STATIC SCREEN - not gameplay" if draws < 1.0 else
-                 "light - check this is gameplay, not a menu" if draws < 15.0 else
-                 "gameplay")
-        print(f"  scene         {draws:.1f} draw batches/frame  ({scene})")
+        # Counters are averaged per presented frame, and the UI presents faster
+        # than the guest draws, so this is not comparable to a guest draw-call
+        # count. Only near-zero is unambiguous: nothing is being drawn at all.
+        scene = " (STATIC SCREEN - nothing is being drawn)" if draws < 1.0 else ""
+        print(f"  scene         {draws:.1f} draw batches per presented frame{scene}")
 
     vtx = agg.get("vertex") or {}
     if vtx.get("vtx_stalls"):
@@ -223,10 +224,10 @@ def print_compare(pa, pb):
     print()
     da = a["counter"].get("begin_ends", 0.0)
     db = b["counter"].get("begin_ends", 0.0)
-    if a["counter"] and b["counter"] and max(da, db) < 15.0:
-        print(f"  !! LIGHT SCENE: {da:.1f}/{db:.1f} draw batches per frame - a menu or")
-        print("     static screen barely exercises the renderer, so a change can look")
-        print("     neutral here and still matter in real gameplay.")
+    if a["counter"] and b["counter"] and max(da, db) < 1.0:
+        print(f"  !! STATIC SCREEN: {da:.1f}/{db:.1f} draw batches per presented frame.")
+        print("     Nothing is being drawn, so this pair measures the presenter, not")
+        print("     the renderer. Re-run from a gameplay snapshot.")
 
     v = verdict(a["fps"], b["fps"], a["fps_sd"], b["fps_sd"], a["n_windows"], b["n_windows"])
     rows = [("fps", a["fps"], b["fps"], True, v)]
