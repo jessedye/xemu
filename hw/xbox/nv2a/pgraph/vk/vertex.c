@@ -53,16 +53,18 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
     size_t end_bit = TARGET_PAGE_ALIGN(offset + size) / TARGET_PAGE_SIZE;
     size_t nbits = end_bit - start_bit;
 
-    /* Default behaviour drains whenever the write lands on a page that was
-     * uploaded, whether or not a draw ever read it. Tracking what draws
-     * actually reference narrows that to the writes that can really corrupt a
-     * recorded draw, and splits the rest into a cheaper wait. Opt in with
-     * XEMU_VTX_PRECISE while it is being measured. */
+    /* Draining on any page that was *uploaded* is both too eager and not eager
+     * enough: it stalls on pages no draw ever read, and misses pages uploaded
+     * before this command buffer began that a recorded draw still reads. The
+     * second case is a real hazard - measured at 3.36 per frame in Morrowind -
+     * and tracking what draws reference removes it at no measurable cost, so it
+     * is the default. Set XEMU_VTX_PRECISE=0 to fall back. */
     static int precise = -1;
     if (precise < 0) {
-        precise = getenv("XEMU_VTX_PRECISE") != NULL;
-        if (precise) {
-            fprintf(stderr, "vk: precise vertex rewrite tracking\n");
+        const char *opt = getenv("XEMU_VTX_PRECISE");
+        precise = !(opt && !strcmp(opt, "0"));
+        if (!precise) {
+            fprintf(stderr, "vk: precise vertex rewrite tracking disabled\n");
         }
     }
 
