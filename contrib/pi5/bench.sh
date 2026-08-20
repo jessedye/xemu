@@ -92,10 +92,23 @@ ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1)
     echo "binary=$(stat -c %y "$BIN")"
 } > "$OUT/$TAG.meta"
 
+# A snapshot is restored over the monitor rather than with -loadvm. xemu
+# hot-plugs the bound controller after the machine is built, so a snapshot
+# taken with one attached describes a USB topology that does not exist yet at
+# launch, and -loadvm fails with "Unknown section or instance .../usb-hub".
+QMP_SOCK=/tmp/xemu-bench-qmp.sock
+rm -f "$QMP_SOCK"
+
 env "${ENV[@]}" timeout -s KILL "$SECS" "$BIN" \
-    -config_path "$CFG" -dvd_path "$ISO" ${SNAPSHOT:+-loadvm "$SNAPSHOT"} \
+    -config_path "$CFG" -dvd_path "$ISO" \
+    ${SNAPSHOT:+-qmp "unix:$QMP_SOCK,server,nowait"} \
     > "$OUT/$TAG.log" 2>&1 &
 XEMU_PID=$!
+
+if [ -n "$SNAPSHOT" ]; then
+    sleep 25
+    python3 "$(dirname "$0")/qmp-loadvm.py" "$QMP_SOCK" "$SNAPSHOT"
+fi
 
 # Capture a frame once the guest is past boot, so a mirrored or corrupted
 # picture is caught even though every timing number looks healthy.
