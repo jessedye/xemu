@@ -76,10 +76,17 @@ sleep "$BOOT"
 
 shot () { DISPLAY=:1 import -window root "$SHOTS/$1.png" 2>/dev/null; echo "  shot $1"; }
 
-# SDL delivers key events to the focused window only, so make sure it is xemu
-# and not whatever the bare X session left focused.
-DISPLAY=:1 xdotool search --name xemu windowactivate --sync 2>/dev/null || \
-    echo "  warning: could not focus the xemu window; keys may go nowhere"
+# SDL delivers key events to the focused window only. windowactivate asks the
+# window manager to raise the window, and there is no window manager on this
+# bare X server, so use windowfocus, which sets input focus directly.
+WID=$(DISPLAY=:1 xdotool search --name xemu 2>/dev/null | tail -1)
+if [ -n "$WID" ]; then
+    DISPLAY=:1 xdotool windowfocus --sync "$WID" 2>/dev/null
+    DISPLAY=:1 xdotool windowraise "$WID" 2>/dev/null
+    echo "  focused xemu window $WID (focus now: $(DISPLAY=:1 xdotool getwindowfocus))"
+else
+    echo "  warning: no xemu window found; keys will go nowhere"
+fi
 sleep 1
 
 shot 00_start
@@ -92,9 +99,11 @@ for step in "${STEPS[@]}"; do
         wait:*) sleep "${step#wait:}" ;;
         *:*)    key="${step%%:*}"; rep="${step##*:}"
                 for _ in $(seq 1 "$rep"); do
-                    DISPLAY=:1 xdotool key --clearmodifiers "$key"; sleep 0.4
+                    DISPLAY=:1 xdotool key --clearmodifiers ${WID:+--window $WID} "$key"
+                    sleep 0.4
                 done ;;
-        *)      DISPLAY=:1 xdotool key --clearmodifiers "$step"; sleep 0.8 ;;
+        *)      DISPLAY=:1 xdotool key --clearmodifiers ${WID:+--window $WID} "$step"
+                sleep 0.8 ;;
     esac
     shot "$(printf '%02d' $n)_${step//:/_}"
     n=$((n + 1))
