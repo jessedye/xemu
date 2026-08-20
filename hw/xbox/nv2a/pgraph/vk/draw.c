@@ -1343,6 +1343,25 @@ static bool pgraph_vk_inline_queries(void)
     return cached == 1;
 }
 
+/* A clear is bracketed in its own render pass today: end_render_pass before it
+ * and again after. vkCmdClearAttachments is an in-pass command, so those two
+ * boundaries buy nothing and each one is a tile store and reload. Across eight
+ * measured gameplay logs a boundary prices at ~0.40 ms of GPU time, and
+ * 2 x clears accounts for most of the pass count in every title that is not
+ * doing something unusual. Opt-in until it has been soaked for clear-region
+ * correctness. */
+static bool pgraph_vk_inline_clears(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("XEMU_CLEAR_INLINE") != NULL;
+        if (cached) {
+            fprintf(stderr, "vk: clears kept inside render passes\n");
+        }
+    }
+    return cached == 1;
+}
+
 /* A flip stall is the guest waiting for the display, not for data, so nothing
  * on the host needs the result yet: let the GPU drain while this thread carries
  * on. Measured over three Morrowind pairs (p99 +6/-9/-4%, i.e. noise) and one
@@ -1691,7 +1710,7 @@ static void begin_draw(PGRAPHState *pg)
         end_query(r);
     }
 
-    if (pg->clearing) {
+    if (pg->clearing && !pgraph_vk_inline_clears()) {
         end_render_pass(r);
     }
 
@@ -1764,7 +1783,7 @@ static void end_draw(PGRAPHState *pg)
     assert(r->in_command_buffer);
     assert(r->in_render_pass);
 
-    if (pg->clearing) {
+    if (pg->clearing && !pgraph_vk_inline_clears()) {
         end_render_pass(r);
     }
 
