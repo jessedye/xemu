@@ -97,13 +97,14 @@ for step in "${STEPS[@]}"; do
     [ -n "$step" ] || continue
     case "$step" in
         wait:*) sleep "${step#wait:}" ;;
+        # No --window here on purpose: that path uses XSendEvent, and SDL
+        # discards synthetic events. Plain xdotool key goes through XTEST, which
+        # produces real input the focused window receives.
         *:*)    key="${step%%:*}"; rep="${step##*:}"
                 for _ in $(seq 1 "$rep"); do
-                    DISPLAY=:1 xdotool key --clearmodifiers ${WID:+--window $WID} "$key"
-                    sleep 0.4
+                    DISPLAY=:1 xdotool key --clearmodifiers "$key"; sleep 0.4
                 done ;;
-        *)      DISPLAY=:1 xdotool key --clearmodifiers ${WID:+--window $WID} "$step"
-                sleep 0.8 ;;
+        *)      DISPLAY=:1 xdotool key --clearmodifiers "$step"; sleep 0.8 ;;
     esac
     shot "$(printf '%02d' $n)_${step//:/_}"
     n=$((n + 1))
