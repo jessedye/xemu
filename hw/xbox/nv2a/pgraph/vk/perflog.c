@@ -60,6 +60,9 @@ static const struct {
     { NV2A_PROF_RPB_SURFACE,          "rpb_surface" },
     { NV2A_PROF_RPB_QUERY,            "rpb_query" },
     { NV2A_PROF_RPB_CLEAR,            "rpb_clear" },
+    { NV2A_PROF_INLINE_ELEMENTS,     "inline_elements" },
+    { NV2A_PROF_INLINE_BUFFERS,      "inline_buffers" },
+    { NV2A_PROF_INLINE_ARRAYS,       "inline_arrays" },
     /* Render-pass structure: on a tiled GPU every pass boundary is a full
      * tile store and reload, so churn here is GPU time. */
     { NV2A_PROF_PIPELINE_RENDERPASSES, "renderpasses" },
