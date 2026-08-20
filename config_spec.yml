@@ -228,6 +228,10 @@ display:
     type: enum
     values: ["NULL", OPENGL, VULKAN]
     default: OPENGL
+  backend:
+    type: enum
+    values: [OPENGL, VULKAN]
+    default: OPENGL
   vulkan:
     validation_layers: bool
     debug_shaders: bool

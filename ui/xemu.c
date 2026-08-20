@@ -121,15 +121,22 @@ static SDL_GLContext m_context;
  * Selecting the Vulkan backend presents the image the NV2A renderer already
  * composited, without that round trip.
  *
- * Opt in with XEMU_DISPLAY_BACKEND=vulkan so the default behaviour is
- * unchanged while the path is being brought up. */
+ * Selected by display.backend, which is separate from display.renderer: the
+ * renderer decides how the NV2A is emulated, this decides how the resulting
+ * image reaches the screen. XEMU_DISPLAY_BACKEND overrides it for bring-up. */
 static bool xemu_display_backend_is_vulkan(void)
 {
     static int cached = -1;
 
     if (cached < 0) {
         const char *choice = getenv("XEMU_DISPLAY_BACKEND");
-        cached = (choice && !strcmp(choice, "vulkan")) ? 1 : 0;
+
+        if (choice) {
+            cached = !strcmp(choice, "vulkan");
+        } else {
+            cached = g_config.display.backend == CONFIG_DISPLAY_BACKEND_VULKAN;
+        }
+
         if (cached) {
             fprintf(stderr, "display: using the Vulkan presentation backend\n");
         }

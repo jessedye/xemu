@@ -748,6 +748,13 @@ void MainMenuDisplayView::Draw()
 #endif
                  ,
                  "Select desired renderer implementation");
+#ifdef CONFIG_VULKAN
+    ChevronCombo("Presentation", &g_config.display.backend,
+                 "OpenGL\0"
+                 "Vulkan\0",
+                 "How the rendered image reaches the screen. Vulkan presents "
+                 "without a GL round trip; takes effect on restart");
+#endif
     int rendering_scale = nv2a_get_surface_scale_factor() - 1;
     if (ChevronCombo("Internal resolution scale", &rendering_scale,
                      "1x\0"
@@ -1617,11 +1624,22 @@ void MainMenuAboutView::Draw()
 
     static const char *sys_info_text = NULL;
     if (sys_info_text == NULL) {
-        const char *gl_shader_version =
-            (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
-        const char *gl_version = (const char *)glGetString(GL_VERSION);
-        const char *gl_renderer = (const char *)glGetString(GL_RENDERER);
-        const char *gl_vendor = (const char *)glGetString(GL_VENDOR);
+        /* There is no GL context at all under the Vulkan presentation backend,
+         * so these have nothing to query. */
+        const char *unavailable = "n/a (Vulkan presentation)";
+        const char *gl_shader_version = unavailable;
+        const char *gl_version = unavailable;
+        const char *gl_renderer = unavailable;
+        const char *gl_vendor = unavailable;
+
+        if (!g_hud_uses_vulkan) {
+            gl_shader_version =
+                (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
+            gl_version = (const char *)glGetString(GL_VERSION);
+            gl_renderer = (const char *)glGetString(GL_RENDERER);
+            gl_vendor = (const char *)glGetString(GL_VENDOR);
+        }
+
         sys_info_text = g_strdup_printf(
             "CPU:          %s\nOS Platform:  %s\nOS Version:   "
             "%s\nManufacturer: %s\n"

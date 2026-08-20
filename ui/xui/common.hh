@@ -37,6 +37,10 @@
 #include <misc/cpp/imgui_stdlib.h>
 #include <stb_image.h>
 
+/* True once the interface is drawing through the Vulkan presentation
+ * backend, in which case there is no GL context to fall back on. */
+extern bool g_hud_uses_vulkan;
+
 #include "qemu/osdep.h"
 
 extern "C" {

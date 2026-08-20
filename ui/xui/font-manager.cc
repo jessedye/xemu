@@ -100,7 +100,6 @@ void FontManager::Rebuild()
     }
 
 #ifdef CONFIG_VULKAN
-    extern bool g_hud_uses_vulkan;
     if (g_hud_uses_vulkan) {
         ImGui_ImplVulkan_DestroyFontsTexture();
         ImGui_ImplVulkan_CreateFontsTexture();
