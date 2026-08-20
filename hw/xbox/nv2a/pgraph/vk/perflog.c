@@ -56,6 +56,10 @@ static const struct {
     { NV2A_PROF_NBS_INLINE_STAGING,   "nbs_inline" },
     { NV2A_PROF_NBS_COMPUTE_TEX,      "nbs_compute_tex" },
     { NV2A_PROF_NBS_COMPUTE_SURF,     "nbs_compute_surf" },
+    { NV2A_PROF_RPB_FINISH,           "rpb_finish" },
+    { NV2A_PROF_RPB_SURFACE,          "rpb_surface" },
+    { NV2A_PROF_RPB_QUERY,            "rpb_query" },
+    { NV2A_PROF_RPB_CLEAR,            "rpb_clear" },
     /* Render-pass structure: on a tiled GPU every pass boundary is a full
      * tile store and reload, so churn here is GPU time. */
     { NV2A_PROF_PIPELINE_RENDERPASSES, "renderpasses" },

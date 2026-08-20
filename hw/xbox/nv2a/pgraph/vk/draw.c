@@ -1311,6 +1311,18 @@ static void end_render_pass(PGRAPHVkState *r)
     }
 }
 
+/* A pass boundary is the dominant GPU cost on a tiler - measured at ~0.40 ms
+ * here, about 31 draw batches - and until now the seven places that end a pass
+ * were indistinguishable in the perflog. Attribute each one so the count can
+ * be explained rather than guessed at. */
+static void end_render_pass_for(PGRAPHVkState *r, unsigned counter)
+{
+    if (r->in_render_pass) {
+        nv2a_profile_inc_counter(counter);
+    }
+    end_render_pass(r);
+}
+
 const enum NV2A_PROF_COUNTERS_ENUM finish_reason_to_counter_enum[] = {
     [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] = NV2A_PROF_FINISH_VERTEX_BUFFER_DIRTY,
     [VK_FINISH_REASON_SURFACE_CREATE] = NV2A_PROF_FINISH_SURFACE_CREATE,
@@ -1400,7 +1412,7 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         nv2a_profile_inc_counter(finish_reason_to_counter_enum[finish_reason]);
 
         if (r->in_render_pass) {
-            end_render_pass(r);
+            end_render_pass_for(r, NV2A_PROF_RPB_FINISH);
         }
         if (r->query_in_flight) {
             end_query(r);
@@ -1598,7 +1610,7 @@ void pgraph_vk_ensure_not_in_render_pass(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    end_render_pass(r);
+    end_render_pass_for(r, NV2A_PROF_RPB_SURFACE);
     if (r->query_in_flight) {
         end_query(r);
     }
@@ -1693,25 +1705,25 @@ static void begin_draw(PGRAPHState *pg)
     if (!pg->clearing && pg->zpass_pixel_count_enable) {
         if (r->new_query_needed && r->query_in_flight) {
             if (split_pass_for_query) {
-                end_render_pass(r);
+                end_render_pass_for(r, NV2A_PROF_RPB_QUERY);
             }
             end_query(r);
         }
         if (!r->query_in_flight) {
             if (split_pass_for_query) {
-                end_render_pass(r);
+                end_render_pass_for(r, NV2A_PROF_RPB_QUERY);
             }
             begin_query(r);
         }
     } else if (r->query_in_flight) {
         if (split_pass_for_query) {
-            end_render_pass(r);
+            end_render_pass_for(r, NV2A_PROF_RPB_QUERY);
         }
         end_query(r);
     }
 
     if (pg->clearing && !pgraph_vk_inline_clears()) {
-        end_render_pass(r);
+        end_render_pass_for(r, NV2A_PROF_RPB_CLEAR);
     }
 
     bool must_bind_pipeline = r->pipeline_binding_changed;
@@ -1784,7 +1796,7 @@ static void end_draw(PGRAPHState *pg)
     assert(r->in_render_pass);
 
     if (pg->clearing && !pgraph_vk_inline_clears()) {
-        end_render_pass(r);
+        end_render_pass_for(r, NV2A_PROF_RPB_CLEAR);
     }
 
     r->in_draw = false;
