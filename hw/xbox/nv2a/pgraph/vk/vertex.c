@@ -126,6 +126,11 @@ void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
                                        missed_hazard);
     }
 
+    if (conflict && pgraph_vk_perflog_enabled()) {
+        pgraph_vk_perflog_vertex_conflict_at(
+            offset, r->storage_buffers[BUFFER_VERTEX_RAM].buffer_size);
+    }
+
     if (conflict) {
         /* Vertex data changed under recorded draws - drawn or in flight; the
          * bitmap is cleared only when the submission is reclaimed, so this

@@ -133,6 +133,11 @@ static struct {
      * default guard does not flag, because the page was uploaded
      * before the current command buffer began. */
     unsigned long vertex_missed_hazards;
+    /* Conflicts per 1 MiB of guest VRAM. A stall spread evenly over 64 MiB
+     * needs the submission model fixed; one concentrated in a couple of buckets
+     * can be routed around instead. */
+#define PERFLOG_VRAM_BUCKETS 64
+    unsigned long vertex_conflict_bucket[PERFLOG_VRAM_BUCKETS];
     /* Time the GPU spent executing, as reported by the GPU itself. */
     double gpu_busy_ms;
     unsigned stutters;
@@ -219,6 +224,18 @@ void pgraph_vk_perflog_init(void)
             "vtx_written_pages vtx_missed_hazards\n");
     fprintf(stderr, "perflog: writing frame timings to %s (stutter > %.1f ms)\n",
             path, g_perflog.stutter_ms);
+}
+
+void pgraph_vk_perflog_vertex_conflict_at(uint64_t offset, uint64_t vram_size)
+{
+    if (!g_perflog.enabled || !vram_size) {
+        return;
+    }
+
+    unsigned bucket = (unsigned)((offset * PERFLOG_VRAM_BUCKETS) / vram_size);
+    if (bucket < PERFLOG_VRAM_BUCKETS) {
+        g_perflog.vertex_conflict_bucket[bucket]++;
+    }
 }
 
 void pgraph_vk_perflog_vertex_write(unsigned long written_pages,
@@ -330,6 +347,31 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
             (double)g_perflog.vertex_written_pages / n,
             (double)g_perflog.vertex_missed_hazards / n);
     fprintf(g_perflog.f, "\n");
+
+    {
+        unsigned long total = 0, top = 0;
+        int top_bucket = -1;
+        int used = 0;
+
+        for (int i = 0; i < PERFLOG_VRAM_BUCKETS; i++) {
+            unsigned long v = g_perflog.vertex_conflict_bucket[i];
+            total += v;
+            used += v ? 1 : 0;
+            if (v > top) {
+                top = v;
+                top_bucket = i;
+            }
+        }
+        if (total) {
+            fprintf(g_perflog.f,
+                    "# vertex conflicts: %lu across %d of %d MiB buckets, "
+                    "top bucket %d holds %.0f%%\n",
+                    total, used, PERFLOG_VRAM_BUCKETS, top_bucket,
+                    100.0 * (double)top / (double)total);
+        }
+        memset(g_perflog.vertex_conflict_bucket, 0,
+               sizeof(g_perflog.vertex_conflict_bucket));
+    }
 
     if (g_perflog.dropped_samples) {
         fprintf(g_perflog.f, "# window %lu dropped %u samples (over capacity)\n",
