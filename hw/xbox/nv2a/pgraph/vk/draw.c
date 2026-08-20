@@ -169,6 +169,10 @@ static void save_pipeline_cache(PGRAPHVkState *r)
 {
     size_t size = 0;
 
+    if (!g_config.perf.cache_shaders) {
+        return;
+    }
+
     if (vkGetPipelineCacheData(r->device, r->vk_pipeline_cache, &size, NULL) !=
             VK_SUCCESS ||
         size == 0) {
@@ -193,7 +197,8 @@ static void init_pipeline_cache(PGRAPHState *pg)
     g_autofree gchar *cache_data = NULL;
     gsize cache_size = 0;
 
-    if (!g_file_get_contents(cache_path, &cache_data, &cache_size, NULL) ||
+    if (!g_config.perf.cache_shaders ||
+        !g_file_get_contents(cache_path, &cache_data, &cache_size, NULL) ||
         !pipeline_cache_data_is_usable(r, (const uint8_t *)cache_data,
                                        cache_size)) {
         g_clear_pointer(&cache_data, g_free);
