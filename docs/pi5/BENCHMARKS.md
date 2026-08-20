@@ -27,6 +27,10 @@ VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
 
 | # | Change | Before | After | Verdict |
 |---|--------|--------|-------|---------|
+| 40 | **Stutter metric noise floor measured** | assumed meaningful at ~10% | two *functionally identical* binaries (70928c507 vs its revert b55b91b3c) differed by **+27% stutters/min** on the same snapshot | CALIBRATION — treat stutters/min deltas below ~30% as noise; do not call them regressions |
+| 39 | **Conditional surface-upload drain** (`surface.c`, guarded by `draw_time`/`sampled_time`) | unconditional `pgraph_vk_finish` per upload | waits down (aux_fence -33%, flip_stall -45%) but the composited frame is visibly **ghosted** - two frames blended | REVERTED - the drain is load-bearing; timing alone passed it, the frame capture caught it |
+| 38 | **Snapshot-resumed benchmarking** (`make-snapshot.sh` + `bench.sh -x`) | arms started from disc boot and drifted; a scene difference read as a perf difference | both arms resume one snapshot; guest-driven counters now agree within 15% | PASS - immediately exposed row 39's corruption, which the drifting benchmark had scored as MATCH 0.10 |
+| 37 | **Vulkan present loop paced to vblank** (`ui/xemu.c`) | mailbox present never blocks, so the UI loop free-ran | p99 -6%, 1% low +14%, stutters -17%, waits down across the board | PASS - the GL path was vsync-paced all along; only the Vulkan arm was uncapped |
 | 1 | Index-buffer clamp (bounded allocation) | 855 MiB reserved, 254 tex evictions | 580 MiB, 0 evictions | kept |
 | 2 | 1080p output instead of 4K | — | +24% fps | kept (launcher forces 1080p) |
 | 3 | V3D 1350 MHz | — | +9% fps, readback 18.14 -> 14.57 ms | kept |
