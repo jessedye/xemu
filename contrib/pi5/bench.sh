@@ -14,6 +14,8 @@
 #   -r  reference PNG: capture a frame mid-run and check it against this
 #       with scripts/frame_check.py, which sees flips and corruption that
 #       the perflog cannot
+#   -B  binary to run (default: the freshly built one). Set this to a saved
+#       copy to A/B a change that is not switchable at runtime.
 #
 # Ground rules encoded here so a run cannot violate them:
 #   - refuses to start if xemu is already running (someone may be playing)
@@ -28,7 +30,7 @@ BIN=/home/pi/xemu-build/dist/xemu
 CFG=/home/pi/.local/share/xemu/xemu/xemu.toml
 OUT=/home/pi/bench
 
-while getopts "t:b:am:s:i:r:" o; do
+while getopts "t:b:am:s:i:r:B:" o; do
     case $o in
         t) TAG=$OPTARG ;;
         b) BACKEND=$OPTARG ;;
@@ -37,6 +39,7 @@ while getopts "t:b:am:s:i:r:" o; do
         s) SECS=$OPTARG ;;
         i) ISO=$OPTARG ;;
         r) REFERENCE=$OPTARG ;;
+        B) BIN=$OPTARG ;;
         *) exit 2 ;;
     esac
 done
