@@ -192,8 +192,27 @@ def print_compare(pa, pb):
             print(f"  !! UNFAIR COMPARISON: guest progress differs 10x "
                   f"({ma['progress']} vs {mb['progress']}) — one run was starved; "
                   f"fps numbers below are not comparable")
-        else:
-            print(f"  guest work comparable ({ma['progress']} vs {mb['progress']})")
+
+    # The progress counter above saturates, so on its own it will happily call
+    # two different scenes comparable. These counters are driven by what the
+    # guest asked for, not by how the renderer serves it, so a renderer change
+    # must leave them alone; if it did not, the two runs saw different work and
+    # nothing below can be attributed to the change.
+    drift = []
+    for k in ("begin_ends", "draw_arrays", "clears"):
+        av, bv = a["counter"].get(k, 0.0), b["counter"].get(k, 0.0)
+        if max(av, bv) < 0.01:
+            continue
+        rel = abs(bv - av) / max(av, bv)
+        if rel > 0.15:
+            drift.append(f"{k} {av:.2f}->{bv:.2f} ({rel*100:.0f}%)")
+    if drift:
+        print("  !! SCENE MISMATCH: guest-driven counters differ - "
+              + ", ".join(drift))
+        print("     The runs did different work. Treat every number below as "
+              "unattributable until the arms match.")
+    elif a["counter"] and b["counter"]:
+        print("  guest work comparable (guest-driven counters within 15%)")
     print()
     v = verdict(a["fps"], b["fps"], a["fps_sd"], b["fps_sd"], a["n_windows"], b["n_windows"])
     rows = [("fps", a["fps"], b["fps"], True, v)]
