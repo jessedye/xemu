@@ -172,6 +172,7 @@ static void xemu_hud_init_common(SDL_Window *window, void *sdl_gl_context,
 }
 
 static bool g_hud_has_gl_renderer;
+bool g_hud_uses_vulkan;
 
 void xemu_hud_init(SDL_Window *window, void *sdl_gl_context)
 {
@@ -239,13 +240,22 @@ void xemu_hud_update(void)
         g_last_scale = g_viewport_mgr.m_scale;
     }
 
-    if (!first_boot_window.is_open) {
+    if (!first_boot_window.is_open && !g_hud_uses_vulkan) {
+        /* The Vulkan path presents the guest frame itself; the overlay is
+         * drawn over it rather than around a framebuffer texture. */
         int ww, wh;
         SDL_GetWindowSizeInPixels(xemu_get_window(), &ww, &wh);
         RenderFramebuffer(g_tex, ww, wh, g_flip_req);
     }
 
-    ImGui_ImplOpenGL3_NewFrame();
+#ifdef CONFIG_VULKAN
+    if (g_hud_uses_vulkan) {
+        ImGui_ImplVulkan_NewFrame();
+    } else
+#endif
+    {
+        ImGui_ImplOpenGL3_NewFrame();
+    }
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
     ImGui_ImplSDL3_NewFrame();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -357,6 +367,40 @@ void xemu_hud_update(void)
     // static bool show_demo = true;
     // if (show_demo) ImGui::ShowDemoWindow(&show_demo);
 }
+
+#ifdef CONFIG_VULKAN
+void xemu_hud_render_vulkan(VkCommandBuffer cmd)
+{
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+    g_screenshot_pending = false;
+}
+
+/* The context and platform binding already exist from xemu_hud_init_input_only;
+ * this attaches the renderer backend once the presenter can supply one. */
+void xemu_hud_init_vulkan(void *window, const XemuHudVulkanInfo *info)
+{
+    (void)window;
+    g_hud_uses_vulkan = true;
+
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = info->instance;
+    init_info.PhysicalDevice = info->physical_device;
+    init_info.Device = info->device;
+    init_info.QueueFamily = info->queue_family;
+    init_info.Queue = info->queue;
+    init_info.DescriptorPool = info->descriptor_pool;
+    init_info.RenderPass = info->render_pass;
+    init_info.MinImageCount = info->image_count;
+    init_info.ImageCount = info->image_count;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    ImGui_ImplVulkan_Init(&init_info);
+
+    /* Deferred until a renderer backend exists: building the font atlas
+     * uploads it through whichever one is installed. */
+    InitializeStyle();
+}
+#endif
 
 void xemu_hud_render()
 {

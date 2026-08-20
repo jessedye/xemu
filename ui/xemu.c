@@ -856,7 +856,8 @@ static void vk_render_frame(struct xemu_console *scon)
             fprintf(stderr, "display: could not create a Vulkan surface: %s\n",
                     SDL_GetError());
             present_failed = true;
-        } else if (!nv2a_present_init((uint64_t)surface, width, height)) {
+        } else if (!nv2a_present_init(scon->real_window, (uint64_t)surface,
+                                      width, height)) {
             present_failed = true;
         } else {
             present_ready = true;
@@ -864,6 +865,12 @@ static void vk_render_frame(struct xemu_console *scon)
     }
 
     if (present_ready) {
+        xemu_main_loop_lock();
+        xemu_hud_update();
+        xemu_main_loop_unlock();
+
+        /* Records the interface's draw data on the renderer thread while this
+         * one waits, so the two never touch ImGui at the same time. */
         nv2a_present_frame(width, height);
     }
 

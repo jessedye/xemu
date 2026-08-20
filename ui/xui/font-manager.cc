@@ -99,6 +99,14 @@ void FontManager::Rebuild()
         m_fixed_width_font = io.Fonts->AddFontDefault(&config);
     }
 
+#ifdef CONFIG_VULKAN
+    extern bool g_hud_uses_vulkan;
+    if (g_hud_uses_vulkan) {
+        ImGui_ImplVulkan_DestroyFontsTexture();
+        ImGui_ImplVulkan_CreateFontsTexture();
+        return;
+    }
+#endif
     ImGui_ImplOpenGL3_DestroyFontsTexture();
     ImGui_ImplOpenGL3_CreateFontsTexture();
 }

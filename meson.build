@@ -2437,6 +2437,7 @@ endif
 
 libsamplerate = dependency('samplerate', method: 'pkg-config', required: true)
 
+imgui_vulkan_opt = vulkan.found() ? 'enabled' : 'disabled'
 imgui_proj = subproject('imgui', required: true,
                          default_options: [
                            'default_library=static',
@@ -2448,7 +2449,7 @@ imgui_proj = subproject('imgui', required: true,
                            'opengl=enabled',
                            'sdl2_renderer=disabled',
                            'sdl3_renderer=disabled',
-                           'vulkan=disabled',
+                           'vulkan=' + imgui_vulkan_opt,
                            'webgpu=disabled',
                            'glfw=disabled',
                            'sdl2=disabled',

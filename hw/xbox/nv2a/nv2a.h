@@ -41,7 +41,8 @@ int nv2a_get_screen_off(void);
  * hosts. Every one of these is a no-op returning false unless the build has
  * Vulkan and the Vulkan presentation backend is selected. */
 uint64_t nv2a_get_vk_instance(void);
-bool nv2a_present_init(uint64_t vk_surface, int width, int height);
+bool nv2a_present_init(void *window, uint64_t vk_surface, int width,
+                       int height);
 bool nv2a_present_frame(int width, int height);
 void nv2a_present_finalize(void);
 

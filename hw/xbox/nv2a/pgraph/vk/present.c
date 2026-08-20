@@ -38,6 +38,14 @@ typedef struct PresentState {
     unsigned last_draw_time;
     bool have_presented;
 
+    /* The interface is drawn over the presented frame in its own render
+     * pass; the guest image is blitted in first and preserved by a LOAD. */
+    VkImageView *image_views;
+    VkFramebuffer *framebuffers;
+    VkRenderPass render_pass;
+    VkDescriptorPool descriptor_pool;
+    bool overlay_ready;
+
     VkSemaphore image_available;
     VkSemaphore render_finished;
     VkFence in_flight;
@@ -47,8 +55,61 @@ typedef struct PresentState {
 
 static PresentState g_present;
 
+static void destroy_overlay_targets(PGRAPHVkState *r)
+{
+    for (uint32_t i = 0; i < g_present.num_images; i++) {
+        if (g_present.framebuffers && g_present.framebuffers[i]) {
+            vkDestroyFramebuffer(r->device, g_present.framebuffers[i], NULL);
+        }
+        if (g_present.image_views && g_present.image_views[i]) {
+            vkDestroyImageView(r->device, g_present.image_views[i], NULL);
+        }
+    }
+    g_free(g_present.framebuffers);
+    g_free(g_present.image_views);
+    g_present.framebuffers = NULL;
+    g_present.image_views = NULL;
+}
+
+static void create_overlay_targets(PGRAPHVkState *r)
+{
+    g_present.image_views = g_malloc0_n(g_present.num_images,
+                                        sizeof(VkImageView));
+    g_present.framebuffers = g_malloc0_n(g_present.num_images,
+                                         sizeof(VkFramebuffer));
+
+    for (uint32_t i = 0; i < g_present.num_images; i++) {
+        VkImageViewCreateInfo view_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = g_present.images[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = g_present.format,
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = 1,
+                .layerCount = 1,
+            },
+        };
+        VK_CHECK(vkCreateImageView(r->device, &view_info, NULL,
+                                   &g_present.image_views[i]));
+
+        VkFramebufferCreateInfo fb_info = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = g_present.render_pass,
+            .attachmentCount = 1,
+            .pAttachments = &g_present.image_views[i],
+            .width = g_present.extent.width,
+            .height = g_present.extent.height,
+            .layers = 1,
+        };
+        VK_CHECK(vkCreateFramebuffer(r->device, &fb_info, NULL,
+                                     &g_present.framebuffers[i]));
+    }
+}
+
 static void destroy_swapchain(PGRAPHVkState *r)
 {
+    destroy_overlay_targets(r);
     if (g_present.swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(r->device, g_present.swapchain, NULL);
         g_present.swapchain = VK_NULL_HANDLE;
@@ -159,6 +220,10 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
     g_present.extent = extent;
     g_present.present_mode = present_mode;
     g_present.have_presented = false;
+
+    if (g_present.render_pass != VK_NULL_HANDLE) {
+        create_overlay_targets(r);
+    }
     return true;
 }
 
@@ -168,8 +233,8 @@ VkInstance pgraph_vk_get_instance(PGRAPHState *pg)
     return r ? r->instance : VK_NULL_HANDLE;
 }
 
-bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
-                            int height)
+bool pgraph_vk_present_init(PGRAPHState *pg, void *window,
+                            VkSurfaceKHR surface, int width, int height)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
@@ -230,6 +295,65 @@ bool pgraph_vk_present_init(PGRAPHState *pg, VkSurfaceKHR surface, int width,
     VK_CHECK(vkAllocateCommandBuffers(r->device, &alloc_info,
                                       &g_present.command_buffer));
 
+    /* The frame is blitted in before the interface draws, so the attachment
+     * is loaded rather than cleared. */
+    VkAttachmentDescription attachment = {
+        .format = g_present.format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+    VkAttachmentReference color_ref = {
+        0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    };
+    VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_ref,
+    };
+    VkRenderPassCreateInfo render_pass_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &attachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+    };
+    VK_CHECK(vkCreateRenderPass(r->device, &render_pass_info, NULL,
+                                &g_present.render_pass));
+
+    VkDescriptorPoolSize pool_size = {
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64
+    };
+    VkDescriptorPoolCreateInfo pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+        .maxSets = 64,
+        .poolSizeCount = 1,
+        .pPoolSizes = &pool_size,
+    };
+    VK_CHECK(vkCreateDescriptorPool(r->device, &pool_info, NULL,
+                                    &g_present.descriptor_pool));
+
+    create_overlay_targets(r);
+
+    QueueFamilyIndices qf = pgraph_vk_find_queue_families(r->physical_device);
+    XemuHudVulkanInfo hud = {
+        .instance = r->instance,
+        .physical_device = r->physical_device,
+        .device = r->device,
+        .queue_family = qf.queue_family,
+        .queue = r->queue,
+        .descriptor_pool = g_present.descriptor_pool,
+        .render_pass = g_present.render_pass,
+        .image_count = g_present.num_images,
+    };
+    xemu_hud_init_vulkan(window, &hud);
+    g_present.overlay_ready = true;
+
     g_present.initialized = true;
     static const char *const mode_names[] = {
         [VK_PRESENT_MODE_IMMEDIATE_KHR] = "immediate",
@@ -258,6 +382,12 @@ void pgraph_vk_present_finalize(PGRAPHState *pg)
     vkDestroySemaphore(r->device, g_present.render_finished, NULL);
     vkDestroySemaphore(r->device, g_present.image_available, NULL);
     destroy_swapchain(r);
+    if (g_present.render_pass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(r->device, g_present.render_pass, NULL);
+    }
+    if (g_present.descriptor_pool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(r->device, g_present.descriptor_pool, NULL);
+    }
     /* The surface belongs to whoever created it from the window. */
 
     memset(&g_present, 0, sizeof(g_present));
@@ -375,10 +505,34 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
                    VK_FILTER_LINEAR);
 
-    transition(g_present.command_buffer, target,
-               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-               VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT,
-               0);
+    if (g_present.overlay_ready) {
+        transition(g_present.command_buffer, target,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                   VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+
+        VkRenderPassBeginInfo pass_info = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = g_present.render_pass,
+            .framebuffer = g_present.framebuffers[index],
+            .renderArea.extent = g_present.extent,
+        };
+        vkCmdBeginRenderPass(g_present.command_buffer, &pass_info,
+                             VK_SUBPASS_CONTENTS_INLINE);
+        xemu_hud_render_vulkan(g_present.command_buffer);
+        vkCmdEndRenderPass(g_present.command_buffer);
+
+        transition(g_present.command_buffer, target,
+                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, 0);
+    } else {
+        transition(g_present.command_buffer, target,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                   VK_ACCESS_TRANSFER_WRITE_BIT, 0);
+    }
     transition(g_present.command_buffer, r->display.image,
                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -433,9 +587,10 @@ uint64_t nv2a_get_vk_instance(void)
     return (uint64_t)(uintptr_t)pgraph_vk_get_instance(&g_nv2a->pgraph);
 }
 
-bool nv2a_present_init(uint64_t vk_surface, int width, int height)
+bool nv2a_present_init(void *window, uint64_t vk_surface, int width,
+                       int height)
 {
-    return pgraph_vk_present_init(&g_nv2a->pgraph,
+    return pgraph_vk_present_init(&g_nv2a->pgraph, window,
                                   (VkSurfaceKHR)vk_surface, width, height);
 }
 

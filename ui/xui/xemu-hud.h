@@ -42,6 +42,25 @@ void xemu_main_loop_unlock(void);
 // Implemented in xemu_hud.cc
 void xemu_hud_init(SDL_Window *window, void *sdl_gl_context);
 void xemu_hud_init_input_only(SDL_Window *window);
+
+#ifdef CONFIG_VULKAN
+#include <vulkan/vulkan.h>
+/* Handles the presenter owns, passed across so the overlay can draw into the
+ * swapchain image it already blitted the guest frame into. */
+typedef struct XemuHudVulkanInfo {
+    VkInstance instance;
+    VkPhysicalDevice physical_device;
+    VkDevice device;
+    uint32_t queue_family;
+    VkQueue queue;
+    VkDescriptorPool descriptor_pool;
+    VkRenderPass render_pass;
+    uint32_t image_count;
+} XemuHudVulkanInfo;
+
+void xemu_hud_init_vulkan(void *window, const XemuHudVulkanInfo *info);
+void xemu_hud_render_vulkan(VkCommandBuffer cmd);
+#endif
 void xemu_hud_cleanup(void);
 void xemu_hud_update(void);
 void xemu_hud_render(void);
