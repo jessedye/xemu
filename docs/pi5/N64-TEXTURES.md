@@ -116,3 +116,42 @@ sizing to a GPU-side limit.
 Cost of the cap: textures are evicted and reloaded during play, so expect some
 pop-in or hitching that HD does not have. That is the price of fitting 4K into
 2 GB.
+
+## Per-game soak at the 500 MB cap
+
+Six minutes each, 4K tier, nothing else running. Any game that died was to be
+reverted to HD automatically; none did.
+
+| Game | 4K pack | Peak Shmem | OOM kills | Result |
+|---|---|---|---|---|
+| Super Mario 64 | 4.9 GB | 648 MB | 0 | survived |
+| Mario Kart 64 | 12 GB | 638 MB | 0 | survived |
+| Majora's Mask | 21 GB | 676 MB | 0 | survived |
+| Resident Evil 2 | 16 GB | 211 MB | 0 | survived |
+| Ocarina (single pack) | 9.4 GB | 228 MB | 0 | survived |
+
+Mario 64 and Mario Kart had both failed outright before the cap existed.
+
+## Why the cap stays at 500 rather than 1000
+
+1000 MB also survives 6 minutes with no OOM kills, but the margin is not
+there:
+
+| | cap 500 | cap 1000 | unbounded (fatal) |
+|---|---|---|---|
+| Shmem plateau | ~650 MB | 1090 MB | 1211 MB |
+| Available memory | ~900 MB | 517 MB | 507 MB before death |
+| Emulator RSS | steady ~290 MB | falls to 88 MB | falls to 33 MB |
+
+At 1000 the emulator's own resident set collapses to 88 MB - it is being paged
+out to feed textures, the same pattern that preceded the OOM kills, just not
+yet fatal. 500 leaves ~900 MB free with the frontend still to account for.
+
+The core offers only 0/500/1000/1500/... - `MaxHiResTxVramLimit` is parsed
+with `atoi`, so an intermediate value would reach the core, but RetroArch
+validates against its declared list first and falls back to the default of 0,
+which is unlimited. Verify any intermediate value by checking the Shmem
+plateau rather than trusting the config file.
+
+Ocarina has no 4K tier on disk - only the 9.4 GB pack. The 30 GB 4K pack this
+document refers to above is gone.
