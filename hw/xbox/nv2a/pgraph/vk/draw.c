@@ -1255,13 +1255,20 @@ static bool pgraph_vk_inline_queries(void)
     return cached == 1;
 }
 
+/* A flip stall is the guest waiting for the display, not for data, so nothing
+ * on the host needs the result yet: let the GPU drain while this thread carries
+ * on. Measured over three Morrowind pairs (p99 +6/-9/-4%, i.e. noise) and one
+ * GTA pair (p50 -10%, p99 -7%). Requires the framebuffer lifetime fix, since
+ * deferring means recording a new command buffer while the previous submission
+ * is still running. Set XEMU_ASYNC_FLIP=0 to wait immediately. */
 static bool pgraph_vk_defer_flip_wait(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("XEMU_ASYNC_FLIP") != NULL;
-        if (cached) {
-            fprintf(stderr, "vk: flip-stall wait deferred\n");
+        const char *opt = getenv("XEMU_ASYNC_FLIP");
+        cached = !(opt && !strcmp(opt, "0"));
+        if (!cached) {
+            fprintf(stderr, "vk: flip-stall wait taken immediately\n");
         }
     }
     return cached == 1;
