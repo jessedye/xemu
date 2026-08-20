@@ -57,6 +57,16 @@ else:
     text = re.sub(r"^port1 = 'keyboard'$",
                   "port1_driver = 'usb-xbox-gamepad'\nport1 = 'keyboard'",
                   text, count=1, flags=re.M)
+
+# A snapshot records the guest's USB topology, and that topology depends on
+# which controllers were plugged in when it was taken. Leaving the other ports
+# bound to a physical pad makes a snapshot that only resumes while that pad
+# happens to be connected. Unbind them so the layout is one keyboard, always.
+for port in (2, 3, 4):
+    text = re.sub(r"^port%d\s*=.*$" % port, "port%d = ''" % port,
+                  text, count=1, flags=re.M)
+    text = re.sub(r"^port%d_driver\s*=.*$" % port, "port%d_driver = ''" % port,
+                  text, count=1, flags=re.M)
 open(dst, "w").write(text)
 PY
 
