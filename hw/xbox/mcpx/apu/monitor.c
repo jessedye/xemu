@@ -54,8 +54,38 @@ void mcpx_apu_monitor_init(MCPXAPUState *d, Error **errp)
     }
     int frame_bytes = sizeof(d->monitor.frame_buf);
     int drain = MAX(dev_drain_bytes, frame_bytes);
+
+    /* The queue high-water mark is three device buffers, whatever the device
+     * happens to report. Nothing bounds that in time, so a host device with a
+     * generous buffer - an ALSA plug chain, say - sets the audio latency the
+     * player hears, and the throttle only sheds 1 us per 5.33 ms frame, so it
+     * stays there once reached. Cap it in milliseconds; 0 restores the
+     * unbounded behaviour. */
+    const int bytes_per_ms = 48000 * 2 * 2 / 1000;
+    int max_latency_ms = 0;
+    const char *opt = getenv("XEMU_AUDIO_MAX_LATENCY_MS");
+    if (opt && opt[0]) {
+        max_latency_ms = atoi(opt);
+    }
+
     d->monitor.queued_bytes_low = drain;
     d->monitor.queued_bytes_high = 3 * drain;
+
+    if (max_latency_ms > 0) {
+        int cap = max_latency_ms * bytes_per_ms;
+        if (d->monitor.queued_bytes_high > cap) {
+            d->monitor.queued_bytes_high = cap;
+            d->monitor.queued_bytes_low = MAX(cap / 3, frame_bytes);
+        }
+    }
+
+    fprintf(stderr,
+            "apu: device buffer %d frames (%d bytes), watermarks low %d high %d"
+            " (%.0f ms / %.0f ms)\n",
+            dev_buf_frames, dev_drain_bytes, d->monitor.queued_bytes_low,
+            d->monitor.queued_bytes_high,
+            (double)d->monitor.queued_bytes_low / bytes_per_ms,
+            (double)d->monitor.queued_bytes_high / bytes_per_ms);
 
     SDL_ResumeAudioDevice(dev);
 }
