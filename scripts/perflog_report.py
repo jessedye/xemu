@@ -150,6 +150,13 @@ def print_summary(path):
         for k, v in sorted(agg["wait"].items(), key=lambda kv: -kv[1]):
             if v >= 0.05:
                 print(f"      {k:<22}{v:6.2f}")
+    draws = agg["counter"].get("begin_ends", 0.0)
+    if agg["counter"]:
+        scene = ("STATIC SCREEN - not gameplay" if draws < 1.0 else
+                 "light - check this is gameplay, not a menu" if draws < 15.0 else
+                 "gameplay")
+        print(f"  scene         {draws:.1f} draw batches/frame  ({scene})")
+
     vtx = agg.get("vertex") or {}
     if vtx.get("vtx_stalls"):
         stalls = vtx["vtx_stalls"]
@@ -214,6 +221,13 @@ def print_compare(pa, pb):
     elif a["counter"] and b["counter"]:
         print("  guest work comparable (guest-driven counters within 15%)")
     print()
+    da = a["counter"].get("begin_ends", 0.0)
+    db = b["counter"].get("begin_ends", 0.0)
+    if a["counter"] and b["counter"] and max(da, db) < 15.0:
+        print(f"  !! LIGHT SCENE: {da:.1f}/{db:.1f} draw batches per frame - a menu or")
+        print("     static screen barely exercises the renderer, so a change can look")
+        print("     neutral here and still matter in real gameplay.")
+
     v = verdict(a["fps"], b["fps"], a["fps_sd"], b["fps_sd"], a["n_windows"], b["n_windows"])
     rows = [("fps", a["fps"], b["fps"], True, v)]
     for key, hib in [("p50_ms", False), ("p99_ms", False), ("low1pct", True),
