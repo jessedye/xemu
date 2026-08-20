@@ -415,11 +415,27 @@ static void destroy_framebuffers(PGRAPHState *pg)
     NV2A_VK_DPRINTF("Destroying framebuffer");
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    for (int i = 0; i < r->framebuffer_index; i++) {
+    /* Only the ones the finished submission used. Anything created since
+     * belongs to the command buffer still being recorded and is kept, shifted
+     * down so begin_render_pass keeps finding the newest at the end. */
+    int done = r->framebuffers_submitted;
+    if (done > r->framebuffer_index) {
+        done = r->framebuffer_index;
+    }
+
+    for (int i = 0; i < done; i++) {
         vkDestroyFramebuffer(r->device, r->framebuffers[i], NULL);
         r->framebuffers[i] = VK_NULL_HANDLE;
     }
-    r->framebuffer_index = 0;
+
+    int kept = r->framebuffer_index - done;
+    for (int i = 0; i < kept; i++) {
+        r->framebuffers[i] = r->framebuffers[done + i];
+        r->framebuffers[done + i] = VK_NULL_HANDLE;
+    }
+
+    r->framebuffer_index = kept;
+    r->framebuffers_submitted = 0;
 }
 
 static void create_clear_pipeline(PGRAPHState *pg)
@@ -1332,6 +1348,8 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
             r->allocator_last_submit_index = r->submit_count;
             check_budget = true;
         }
+
+        r->framebuffers_submitted = r->framebuffer_index;
 
         /* Those reads now belong to a submitted command buffer rather than one
          * being recorded. */

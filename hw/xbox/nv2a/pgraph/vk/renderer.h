@@ -424,6 +424,12 @@ typedef struct PGRAPHVkState {
     /* The occlusion query pool was reset in bulk for this command buffer,
      * so individual queries need no reset of their own and can therefore
      * begin without leaving the render pass. */
+    /* How many of the framebuffers belong to the submission in flight.
+     * Reclaiming destroys those only: with the flip wait deferred a new
+     * command buffer is recorded while the previous submission is still
+     * running, and destroying its framebuffers would invalidate commands
+     * already recorded against them. */
+    int framebuffers_submitted;
     bool query_pool_reset;
     /* Guest vertex memory divided into fixed buckets, counting how often each
      * one is rewritten under a recorded draw. Conflicts are not spread evenly:
