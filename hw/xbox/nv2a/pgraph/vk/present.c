@@ -353,12 +353,17 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
                VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 
     /* Blit rather than copy so the composited image is scaled to the window
-     * without a separate pass. */
+     * without a separate pass.
+     *
+     * The source rows run bottom-up, which the OpenGL path corrects when it
+     * draws the framebuffer texture; presenting straight to a swapchain has
+     * no such step, so invert the source Y here or the whole frame arrives
+     * upside down. */
     VkImageBlit blit = {
         .srcSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                             .layerCount = 1 },
-        .srcOffsets = { { 0, 0, 0 },
-                        { r->display.width, r->display.height, 1 } },
+        .srcOffsets = { { 0, r->display.height, 0 },
+                        { r->display.width, 0, 1 } },
         .dstSubresource = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                             .layerCount = 1 },
         .dstOffsets = { { 0, 0, 0 },
