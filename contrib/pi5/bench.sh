@@ -19,6 +19,9 @@
 #   -x  snapshot to resume from, so both arms of an A/B start from identical
 #       guest state. Without this the arms land wherever the intro happened to
 #       be, and a scene difference reads as a performance difference.
+#   -c  config file. A snapshot records the guest's device topology, so one made
+#       under a different controller layout will not resume: use the same config
+#       that captured it.
 #
 # Ground rules encoded here so a run cannot violate them:
 #   - refuses to start if xemu is already running (someone may be playing)
@@ -33,7 +36,7 @@ BIN=/home/pi/xemu-build/dist/xemu
 CFG=/home/pi/.local/share/xemu/xemu/xemu.toml
 OUT=/home/pi/bench
 
-while getopts "t:b:am:s:i:r:B:x:" o; do
+while getopts "t:b:am:s:i:r:B:x:c:" o; do
     case $o in
         t) TAG=$OPTARG ;;
         b) BACKEND=$OPTARG ;;
@@ -44,6 +47,7 @@ while getopts "t:b:am:s:i:r:B:x:" o; do
         r) REFERENCE=$OPTARG ;;
         B) BIN=$OPTARG ;;
         x) SNAPSHOT=$OPTARG ;;
+        c) CFG=$OPTARG ;;
         *) exit 2 ;;
     esac
 done
