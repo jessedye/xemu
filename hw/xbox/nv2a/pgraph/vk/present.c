@@ -47,6 +47,13 @@ typedef struct PresentState {
     VkDescriptorPool descriptor_pool;
     bool overlay_ready;
 
+    void *init_window;
+    VkSurfaceKHR init_surface;
+    int init_width;
+    int init_height;
+    bool init_pending;
+    bool init_result;
+
     VkSemaphore image_available;
     VkSemaphore render_finished;
     VkFence in_flight;
@@ -234,8 +241,8 @@ VkInstance pgraph_vk_get_instance(PGRAPHState *pg)
     return r ? r->instance : VK_NULL_HANDLE;
 }
 
-bool pgraph_vk_present_init(PGRAPHState *pg, void *window,
-                            VkSurfaceKHR surface, int width, int height)
+static bool present_init(PGRAPHState *pg, void *window,
+                         VkSurfaceKHR surface, int width, int height)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
@@ -593,11 +600,43 @@ uint64_t nv2a_get_vk_instance(void)
     return (uint64_t)(uintptr_t)pgraph_vk_get_instance(&g_nv2a->pgraph);
 }
 
+/* Runs on the renderer thread, which owns the queue. Bringing the swapchain up
+ * submits work, and so does the interface's first font upload, so neither can
+ * be done from the UI thread while the renderer is mid-frame. */
+void pgraph_vk_present_pending_init(PGRAPHState *pg)
+{
+    if (!qatomic_read(&g_present.init_pending)) {
+        return;
+    }
+
+    g_present.init_result = present_init(pg, g_present.init_window,
+                                         g_present.init_surface,
+                                         g_present.init_width,
+                                         g_present.init_height);
+    qatomic_set(&g_present.init_pending, false);
+}
+
 bool nv2a_present_init(void *window, uint64_t vk_surface, int width,
                        int height)
 {
-    return pgraph_vk_present_init(&g_nv2a->pgraph, window,
-                                  (VkSurfaceKHR)vk_surface, width, height);
+    NV2AState *d = g_nv2a;
+    PGRAPHState *pg = &d->pgraph;
+
+    g_present.init_window = window;
+    g_present.init_surface = (VkSurfaceKHR)vk_surface;
+    g_present.init_width = width;
+    g_present.init_height = height;
+    g_present.init_result = false;
+    qatomic_set(&g_present.init_pending, true);
+
+    qemu_mutex_lock(&d->pfifo.lock);
+    qemu_event_reset(&pg->sync_complete);
+    qatomic_set(&pg->sync_pending, true);
+    pfifo_kick(d);
+    qemu_mutex_unlock(&d->pfifo.lock);
+    qemu_event_wait(&pg->sync_complete);
+
+    return g_present.init_result;
 }
 
 bool nv2a_present_frame(int width, int height)

@@ -138,6 +138,7 @@ static void pgraph_vk_sync(NV2AState *d)
 
     /* Present from here rather than from the UI thread: this is the thread
      * that owns the queue. No-op unless the swapchain backend is in use. */
+    pgraph_vk_present_pending_init(pg);
     pgraph_vk_present_frame(pg);
 
     qatomic_set(&d->pgraph.sync_pending, false);

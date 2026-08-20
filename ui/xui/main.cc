@@ -30,6 +30,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <mutex>
 
 #include "actions.hh"
 #include "common.hh"
@@ -369,9 +370,32 @@ void xemu_hud_update(void)
 }
 
 #ifdef CONFIG_VULKAN
+/* The interface is built on the UI thread and replayed on the renderer thread,
+ * which owns the queue. Holding this across both halves keeps the renderer out
+ * of the draw lists while the next frame is being built. */
+static std::mutex g_overlay_mutex;
+static bool g_overlay_frame_ready;
+
+void xemu_hud_update_vulkan(void)
+{
+    std::lock_guard<std::mutex> guard(g_overlay_mutex);
+
+    xemu_hud_update();
+
+    /* Ends the frame here rather than in the renderer: a skipped present must
+     * not leave an unmatched NewFrame behind. */
+    ImGui::Render();
+    g_overlay_frame_ready = true;
+}
+
 void xemu_hud_render_vulkan(VkCommandBuffer cmd)
 {
-    ImGui::Render();
+    std::lock_guard<std::mutex> guard(g_overlay_mutex);
+
+    if (!g_overlay_frame_ready) {
+        return;
+    }
+
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     g_screenshot_pending = false;
 }

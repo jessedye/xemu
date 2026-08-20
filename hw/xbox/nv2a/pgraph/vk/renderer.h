@@ -483,8 +483,7 @@ typedef struct PGRAPHVkState {
 
 // present.c
 VkInstance pgraph_vk_get_instance(PGRAPHState *pg);
-bool pgraph_vk_present_init(PGRAPHState *pg, void *window,
-                            VkSurfaceKHR surface, int width, int height);
+void pgraph_vk_present_pending_init(PGRAPHState *pg);
 void pgraph_vk_present_finalize(PGRAPHState *pg);
 bool pgraph_vk_present_frame(PGRAPHState *pg);
 

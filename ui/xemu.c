@@ -866,7 +866,7 @@ static void vk_render_frame(struct xemu_console *scon)
 
     if (present_ready) {
         xemu_main_loop_lock();
-        xemu_hud_update();
+        xemu_hud_update_vulkan();
         xemu_main_loop_unlock();
 
         /* Records the interface's draw data on the renderer thread while this

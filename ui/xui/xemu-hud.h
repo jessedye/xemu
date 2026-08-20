@@ -59,6 +59,7 @@ typedef struct XemuHudVulkanInfo {
 } XemuHudVulkanInfo;
 
 void xemu_hud_init_vulkan(void *window, const XemuHudVulkanInfo *info);
+void xemu_hud_update_vulkan(void);
 void xemu_hud_render_vulkan(VkCommandBuffer cmd);
 #endif
 void xemu_hud_cleanup(void);
