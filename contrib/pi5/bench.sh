@@ -81,7 +81,13 @@ fi
 matchbox-window-manager -use_cursor no >/dev/null 2>&1 &
 sleep 4
 
-ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1)
+# Match what the RetroPie launcher actually runs, or a benchmark measures a
+# configuration nobody plays. Each is overridable from the caller so an A/B can
+# still isolate one of them.
+ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1
+     XEMU_TSO="${XEMU_TSO:-1}"
+     XEMU_HARD_FPU="${XEMU_HARD_FPU:-31}"
+     XEMU_SURF_TEX_SAMPLE="${XEMU_SURF_TEX_SAMPLE:-1}")
 [ "$BACKEND" = vk ] && ENV+=(XEMU_DISPLAY_BACKEND=vulkan)
 [ "$ASYNC" = 1 ] && ENV+=(XEMU_ASYNC_FLIP=1)
 
