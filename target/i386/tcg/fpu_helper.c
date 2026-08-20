@@ -3586,6 +3586,7 @@ void helper_xsetbv(CPUX86State *env, uint32_t ecx, uint64_t mask)
 /* XXX: optimize by storing fptt and fptags in the static cpu state */
 
 #define SSE_DAZ             0x0040
+#define SSE_PM              0x1000
 #define SSE_RC_SHIFT        13
 #define SSE_RC_MASK         (3 << SSE_RC_SHIFT)
 #define SSE_FZ              0x8000
@@ -3627,6 +3628,30 @@ void update_mxcsr_status(CPUX86State *env)
                               (mxcsr & FPUS_UE ? float_flag_underflow : 0) |
                               (mxcsr & FPUS_PE ? float_flag_inexact : 0),
                               &env->sse_status);
+
+    /* The softfloat hardfloat fast path only engages once inexact has been
+     * raised, so a guest running with clean status flags - the power-on
+     * state, and what games use - never reaches it and every SSE operation
+     * goes through softfloat. Where the precision exception is masked the
+     * guest cannot trap on inexact and the flag is only sticky status, so
+     * raising it up front buys the fast path for the price of PE reading
+     * set. */
+    {
+        static int sse_hardfloat = -1;
+        if (sse_hardfloat < 0) {
+            sse_hardfloat = getenv("XEMU_SSE_HARDFLOAT") != NULL;
+            if (sse_hardfloat) {
+                fprintf(stderr, "x86-fpu: SSE hardfloat fast path enabled "
+                                "(XEMU_SSE_HARDFLOAT)\n");
+            }
+        }
+        if (sse_hardfloat && (mxcsr & SSE_PM)) {
+            set_float_exception_flags(
+                get_float_exception_flags(&env->sse_status) |
+                    float_flag_inexact,
+                &env->sse_status);
+        }
+    }
 
     /* set denormals are zero */
     set_flush_inputs_to_zero((mxcsr & SSE_DAZ) ? 1 : 0, &env->sse_status);
