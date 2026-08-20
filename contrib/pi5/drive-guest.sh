@@ -76,6 +76,14 @@ sleep "$BOOT"
 
 shot () { DISPLAY=:1 import -window root "$SHOTS/$1.png" 2>/dev/null; echo "  shot $1"; }
 
+HOLD=${HOLD:-0.25}
+press_key () {
+    DISPLAY=:1 xdotool keydown --clearmodifiers "$1"
+    sleep "$HOLD"
+    DISPLAY=:1 xdotool keyup --clearmodifiers "$1"
+    sleep 0.5
+}
+
 # SDL delivers key events to the focused window only. windowactivate asks the
 # window manager to raise the window, and there is no window manager on this
 # bare X server, so use windowfocus, which sets input focus directly.
@@ -97,14 +105,18 @@ for step in "${STEPS[@]}"; do
     [ -n "$step" ] || continue
     case "$step" in
         wait:*) sleep "${step#wait:}" ;;
-        # No --window here on purpose: that path uses XSendEvent, and SDL
-        # discards synthetic events. Plain xdotool key goes through XTEST, which
-        # produces real input the focused window receives.
+        # Two constraints decide how keys are sent here.
+        #
+        # No --window: that routes through XSendEvent and SDL discards synthetic
+        # events; plain xdotool uses XTEST, which is real input.
+        #
+        # And press must be HELD. xemu does not consume key events - it samples
+        # SDL_GetKeyboardState() when it polls the controllers, and that poll
+        # rides the UI loop, which is paced to vblank. A tap lasting under a
+        # millisecond falls between two 16 ms polls and is never observed.
         *:*)    key="${step%%:*}"; rep="${step##*:}"
-                for _ in $(seq 1 "$rep"); do
-                    DISPLAY=:1 xdotool key --clearmodifiers "$key"; sleep 0.4
-                done ;;
-        *)      DISPLAY=:1 xdotool key --clearmodifiers "$step"; sleep 0.8 ;;
+                for _ in $(seq 1 "$rep"); do press_key "$key"; done ;;
+        *)      press_key "$step" ;;
     esac
     shot "$(printf '%02d' $n)_${step//:/_}"
     n=$((n + 1))
