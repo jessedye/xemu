@@ -36,6 +36,8 @@ VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
 | 7 | Non-blocking presenter on the readback path | 16.6 fps | 6.3 fps | **reverted** — starved the upload |
 | 8 | Vulkan swapchain presentation (`XEMU_DISPLAY_BACKEND=vulkan`) | 18.0-18.4 fps, readback 10.9-11.7 ms, 1% low 7.8 | 19.4-19.9 fps, readback 0, 1% low 9.2 | kept, opt-in (+7% fps, +18% 1% low) |
 | 9 | Deferred flip-stall wait, first attempt (`XEMU_ASYNC_FLIP=1`) | 19.8 fps | 5.8 fps, assert, guest starved 1000x | **broken** — reclaim ran after next-draw allocation; fix at HEAD, untested |
+| 33 | Vertex-drain sizing (instrumentation, no fix yet) | 5.18-5.38 ms/frame, occurrence count unknown | **0.88 drains/frame at ~6.1 ms each** (not many small ones); 42 mirror syncs/frame, only ~2% conflict | one expensive mid-frame full drain per frame — real, but see row 34 |
+| 34 | **Pacer re-measured with the full shipped stack** | assumed possibly shifted after TSO + hard-FPU | `CPU_0/TCG` **80.6%** (was 87.5%), renderer 31.7% (was 35.0%) | **the vCPU thread is still the pacer.** M1 and per-draw work are renderer-side, so expect fps-neutral like rows 16/27; their value is consistency only. Do not build M1 for throughput |
 | 32 | Fallback path verified on hardware (`renderer = OPENGL`, V3D) | claimed working, unverified | probe fails -> GL declines -> **Vulkan renderer initializes and runs the guest**; ran to completion | confirmed. **Also found: two GL ceilings, not one** — the GUI needs GLSL 1.50 (`gl-helpers.cc`) and V3D caps at 1.40, so xemu aborts in HUD init before renderer selection unless the GL HUD is bypassed. Reported to #2979 |
 | 31 | L3 soaks + **ship** | — | GTA SA locked 60.0 flips/s, **Morrowind 56 (was 27-55 without it)**, 0 errors both | PASS — `XEMU_SURF_TEX_SAMPLE=1` joins the launcher; full stack is now vulkan + TSO + hard-FPU + direct sampling |
 | 30 | **Direct surface sampling (`XEMU_SURF_TEX_SAMPLE`)**, fixed binary, full stack both sides | surf_to_tex 6.18/frame, stutters/min 427, 1% low 11.5 | surf_to_tex **1.15** (residue = designed zeta/feedback/format fallbacks), **stutters/min 362 (-15%), 1% low 12.2 (+7%)**, gpu_busy -9%, parity + 0 errors | works as measured-for; soak on GTA+Morrowind gates the launcher. Debug trail: a null-labeler crash masqueraded as OOM and starvation first (rows in skill) |
@@ -113,3 +115,17 @@ at 10.4% is the single largest symbol and was on nobody's roadmap: indirect
 branches missing the TB jump cache. The ~69% JIT tail is where M6's per-load
 `dmb ishld` fences live, invisible to symbol profiling — only the elision A/B
 can size them.
+
+## Open follow-ups
+
+- **Upstream `vk/present.c`** — the Vulkan swapchain presentation path is the
+  one genuinely new file this work adds to the renderer (everything else is
+  edits to existing files; upstream already ships a full Vulkan renderer).
+  Blocked on completing the ImGui overlay for that path: it currently skips
+  the GL HUD entirely, so a desktop user switching to it loses their menus.
+  Needs `imgui_impl_vulkan` wired to the presenter's device/queue, then it is
+  PR-ready as one new file plus edits to `ui/xemu.c` and `nv2a.h`.
+- **GUI GLSL ceiling** — `ui/xui/gl-helpers.cc` uses `#version 150 core`;
+  V3D caps at 1.40, so xemu aborts in HUD init on that hardware regardless of
+  renderer fallback (ledger row 32). Lowering those shaders is what would make
+  a GL-3.1 device genuinely supported upstream.
