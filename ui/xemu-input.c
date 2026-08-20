@@ -514,6 +514,41 @@ void xemu_input_update_sdl_kbd_controller_state(ControllerState *state)
 
     const bool *kbd = SDL_GetKeyboardState(NULL);
 
+    /* Synthetic input is easy to get wrong from the outside - focus, event type
+     * and poll timing all have to line up - and from outside there is no way to
+     * tell which one failed. XEMU_INPUT_DEBUG reports what SDL actually sees. */
+    if (getenv("XEMU_INPUT_DEBUG")) {
+        static int announced;
+        static uint32_t last_report;
+        uint32_t now = SDL_GetTicks();
+
+        if (!announced) {
+            announced = 1;
+            fprintf(stderr, "input: video driver '%s', keyboard focus %p\n",
+                    SDL_GetCurrentVideoDriver(), (void *)SDL_GetKeyboardFocus());
+        }
+
+        int num_keys = 0;
+        const bool *all = SDL_GetKeyboardState(&num_keys);
+        int held = 0;
+        int first = -1;
+        for (int i = 0; i < num_keys; i++) {
+            if (all[i]) {
+                held++;
+                if (first < 0) {
+                    first = i;
+                }
+            }
+        }
+
+        if (now - last_report > 1000) {
+            last_report = now;
+            fprintf(stderr,
+                    "input: focus %p, %d key(s) held, first scancode %d\n",
+                    (void *)SDL_GetKeyboardFocus(), held, first);
+        }
+    }
+
 #define KBD_STATE(btn) \
     (kbd[g_config.input.keyboard_controller_scancode_map.btn])
 
