@@ -60,16 +60,28 @@ def _fl(v):
         return 0.0
 
 
+# No real frame takes a second. A window containing one means the guest was
+# stopped - restoring a snapshot, most often - and the gap was counted as a
+# single enormous frame. Such a window poisons avg and worst while leaving p50
+# alone, which is exactly the kind of silent contamination that makes an
+# average look like a measurement.
+PAUSE_MS = 1000.0
+
+
 def aggregate(run):
     """Reduce window rows to one stats dict."""
     W = run["windows"]
     if not W:
         return None
+    kept = [w for w in W if len(w) <= 7 or _fl(w[7]) < PAUSE_MS]
+    dropped = len(W) - len(kept)
+    if kept:
+        W = kept
     base = {
         "fps": 3, "avg_ms": 4, "p50_ms": 5, "p99_ms": 6, "max_ms": 7,
         "low1pct": 8, "down_ms": 10, "up_ms": 11, "tex_mb": 12,
     }
-    out = {"n_windows": len(W)}
+    out = {"n_windows": len(W), "paused_windows": dropped}
     for name, idx in base.items():
         vals = [_fl(w[idx]) for w in W if len(w) > idx]
         out[name] = sum(vals) / len(vals)
@@ -138,6 +150,9 @@ def print_summary(path):
     if meta.get("progress") is not None:
         print(f"  guest work    surface_update peak {meta['progress']}")
     print(f"  windows       {agg['n_windows']}  ({agg['minutes']:.1f} min)  res {'/'.join(agg['res'])}")
+    if agg.get("paused_windows"):
+        print(f"  excluded      {agg['paused_windows']} window(s) containing a "
+              f"frame over {PAUSE_MS:.0f} ms - the guest was stopped, not slow")
     print(f"  fps           {agg['fps']:.1f} +/- {agg['fps_sd']:.1f} (per-window sd)")
     print(f"  frame ms      avg {agg['avg_ms']:.1f}  p50 {agg['p50_ms']:.1f}  p99 {agg['p99_ms']:.1f}  worst {agg['max_ms']:.1f}")
     print(f"  1% low        {agg['low1pct']:.1f} fps    stutters {agg['stutters']} ({agg['stutters']/max(agg['minutes'],0.01):.0f}/min)")
