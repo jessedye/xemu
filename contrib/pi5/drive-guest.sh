@@ -17,7 +17,7 @@ set -uo pipefail
 ISO="" SNAP="" BOOT=90 KEYS="" SAVE_AS=""
 BIN=/home/pi/xemu-build/dist/xemu
 SRC_CFG=/home/pi/.local/share/xemu/xemu/xemu.toml
-CFG=/tmp/xemu-drive.toml
+CFG=${XEMU_BENCH_CFG:-$HOME/.xemu-bench.toml}
 SHOTS=/tmp/drive
 SOCK=/tmp/xemu-drive-qmp.sock
 

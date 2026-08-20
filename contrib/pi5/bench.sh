@@ -102,7 +102,7 @@ ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1
 # hot-plugs the bound controller after the machine is built, so a snapshot
 # taken with one attached describes a USB topology that does not exist yet at
 # launch, and -loadvm fails with "Unknown section or instance .../usb-hub".
-QMP_SOCK=/tmp/xemu-bench-qmp.sock
+QMP_SOCK=${XDG_RUNTIME_DIR:-/tmp}/xemu-bench-qmp.sock
 rm -f "$QMP_SOCK"
 
 env "${ENV[@]}" timeout -s KILL "$SECS" "$BIN" \
