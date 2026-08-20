@@ -42,10 +42,21 @@ python3 - "$SRC_CFG" "$CFG" <<'PY'
 import re, sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
+
+# Binding the keyboard is not enough on its own: without a driver for the port
+# no device is created and the guest sees nothing.
 if re.search(r"^port1\s*=", text, re.M):
     text = re.sub(r"^port1\s*=.*$", "port1 = 'keyboard'", text, count=1, flags=re.M)
 else:
     text = text.replace("[input.bindings]", "[input.bindings]\nport1 = 'keyboard'", 1)
+
+if re.search(r"^port1_driver\s*=", text, re.M):
+    text = re.sub(r"^port1_driver\s*=.*$", "port1_driver = 'usb-xbox-gamepad'",
+                  text, count=1, flags=re.M)
+else:
+    text = re.sub(r"^port1 = 'keyboard'$",
+                  "port1_driver = 'usb-xbox-gamepad'\nport1 = 'keyboard'",
+                  text, count=1, flags=re.M)
 open(dst, "w").write(text)
 PY
 
@@ -64,6 +75,13 @@ echo "settling for ${BOOT}s"
 sleep "$BOOT"
 
 shot () { DISPLAY=:1 import -window root "$SHOTS/$1.png" 2>/dev/null; echo "  shot $1"; }
+
+# SDL delivers key events to the focused window only, so make sure it is xemu
+# and not whatever the bare X session left focused.
+DISPLAY=:1 xdotool search --name xemu windowactivate --sync 2>/dev/null || \
+    echo "  warning: could not focus the xemu window; keys may go nowhere"
+sleep 1
+
 shot 00_start
 
 n=1
