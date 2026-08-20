@@ -51,9 +51,10 @@ static bool pgraph_vk_hot_remap_enabled(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("XEMU_VTX_HOT_REMAP") != NULL;
-        if (cached) {
-            fprintf(stderr, "vk: hot vertex regions fetched per draw\n");
+        const char *opt = getenv("XEMU_VTX_HOT_REMAP");
+        cached = !(opt && !strcmp(opt, "0"));
+        if (!cached) {
+            fprintf(stderr, "vk: hot vertex regions kept in the mirror\n");
         }
     }
     return cached == 1;
