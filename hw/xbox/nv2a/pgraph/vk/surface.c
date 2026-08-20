@@ -1024,7 +1024,17 @@ void pgraph_vk_upload_surface_data(NV2AState *d, SurfaceBinding *surface,
 
     nv2a_profile_inc_counter(NV2A_PROF_SURF_UPLOAD);
 
-    pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_CREATE); // FIXME: SURFACE_UP
+    /* The upload rides an auxiliary submission, which the GPU may run before
+     * the command buffer being recorded here. That only matters if the open
+     * buffer already refers to this surface; otherwise there is nothing for the
+     * upload to overtake, and begin_single_time_commands covers the work
+     * already submitted. Same test render_display applies before its own
+     * drain. */
+    if (r->in_command_buffer &&
+        (surface->draw_time >= r->command_buffer_start_time ||
+         surface->sampled_time >= r->command_buffer_start_time)) {
+        pgraph_vk_finish(pg, VK_FINISH_REASON_SURFACE_CREATE);
+    }
 
     trace_nv2a_pgraph_surface_upload(
                  surface->color ? "COLOR" : "ZETA",

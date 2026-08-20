@@ -126,6 +126,10 @@ typedef struct SurfaceBinding {
     bool cleared;
     int frame_time;
     int draw_time;
+    /* When a draw last read this surface's image directly as a texture. Only
+     * draw_time is stamped when drawing to a surface, so without this a
+     * recorded draw that merely samples it looks untouched. */
+    int sampled_time;
     bool draw_dirty;
     bool download_pending;
     bool upload_pending;
