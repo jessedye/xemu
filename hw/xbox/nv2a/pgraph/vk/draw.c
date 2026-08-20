@@ -1058,7 +1058,7 @@ static void bind_descriptor_sets(PGRAPHState *pg)
 static void begin_query(PGRAPHVkState *r)
 {
     assert(r->in_command_buffer);
-    assert(!r->in_render_pass);
+    assert(r->query_pool_reset || !r->in_render_pass);
     assert(!r->query_in_flight);
 
     // FIXME: We should handle this. Make the query buffer bigger, but at least
@@ -1066,8 +1066,10 @@ static void begin_query(PGRAPHVkState *r)
     assert(r->num_queries_in_flight < r->max_queries_in_flight);
 
     nv2a_profile_inc_counter(NV2A_PROF_QUERY);
-    vkCmdResetQueryPool(r->command_buffer, r->query_pool,
-                        r->num_queries_in_flight, 1);
+    if (!r->query_pool_reset) {
+        vkCmdResetQueryPool(r->command_buffer, r->query_pool,
+                            r->num_queries_in_flight, 1);
+    }
     vkCmdBeginQuery(r->command_buffer, r->query_pool, r->num_queries_in_flight,
                     VK_QUERY_CONTROL_PRECISE_BIT);
 
@@ -1079,7 +1081,7 @@ static void begin_query(PGRAPHVkState *r)
 static void end_query(PGRAPHVkState *r)
 {
     assert(r->in_command_buffer);
-    assert(!r->in_render_pass);
+    assert(r->query_pool_reset || !r->in_render_pass);
     assert(r->query_in_flight);
 
     vkCmdEndQuery(r->command_buffer, r->query_pool,
@@ -1194,6 +1196,12 @@ static void begin_render_pass(PGRAPHState *pg)
 static void end_render_pass(PGRAPHVkState *r)
 {
     if (r->in_render_pass) {
+        /* A query begun inside this pass has to end inside it as well, and
+         * several callers end the pass before the query. Close it here so that
+         * ordering holds wherever the pass is ended from. */
+        if (r->query_in_flight && r->query_pool_reset) {
+            end_query(r);
+        }
         vkCmdEndRenderPass(r->command_buffer);
         r->in_render_pass = false;
     }
@@ -1213,6 +1221,24 @@ const enum NV2A_PROF_COUNTERS_ENUM finish_reason_to_counter_enum[] = {
 
 /* Deferring the flip-stall wait changes when the host blocks, so keep it
  * selectable while its effect is being measured. */
+/* vkCmdResetQueryPool cannot be recorded inside a render pass, which is the
+ * only reason starting an occlusion query has to end one. Resetting the whole
+ * pool once per command buffer lifts that constraint: the queries themselves
+ * are free to begin and end inside a pass. Titles that lean on occlusion
+ * queries pay ~1 render pass per query without this, and on a tile-based GPU
+ * every one of those is a tile store and reload. */
+static bool pgraph_vk_inline_queries(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = getenv("XEMU_QUERY_INLINE") != NULL;
+        if (cached) {
+            fprintf(stderr, "vk: occlusion queries kept inside render passes\n");
+        }
+    }
+    return cached == 1;
+}
+
 static bool pgraph_vk_defer_flip_wait(void)
 {
     static int cached = -1;
@@ -1411,6 +1437,16 @@ void pgraph_vk_begin_command_buffer(PGRAPHState *pg)
         r->timestamps_recorded = true;
     }
 
+    /* Only safe while no results are outstanding; they are read and the count
+     * cleared when a submission is reclaimed. */
+    r->query_pool_reset = false;
+    if (pgraph_vk_inline_queries() && r->query_pool != VK_NULL_HANDLE &&
+        r->num_queries_in_flight == 0) {
+        vkCmdResetQueryPool(r->command_buffer, r->query_pool, 0,
+                            r->max_queries_in_flight);
+        r->query_pool_reset = true;
+    }
+
     r->command_buffer_start_time = pg->draw_time;
     r->in_command_buffer = true;
 }
@@ -1520,17 +1556,25 @@ static void begin_draw(PGRAPHState *pg)
     assert(r->in_command_buffer);
 
     // Visibility testing
+    bool split_pass_for_query = !r->query_pool_reset;
+
     if (!pg->clearing && pg->zpass_pixel_count_enable) {
         if (r->new_query_needed && r->query_in_flight) {
-            end_render_pass(r);
+            if (split_pass_for_query) {
+                end_render_pass(r);
+            }
             end_query(r);
         }
         if (!r->query_in_flight) {
-            end_render_pass(r);
+            if (split_pass_for_query) {
+                end_render_pass(r);
+            }
             begin_query(r);
         }
     } else if (r->query_in_flight) {
-        end_render_pass(r);
+        if (split_pass_for_query) {
+            end_render_pass(r);
+        }
         end_query(r);
     }
 

@@ -421,6 +421,10 @@ typedef struct PGRAPHVkState {
      * draw ever referenced. Split by whether the reader is still being
      * recorded or is already submitted, because the two need different
      * treatment. */
+    /* The occlusion query pool was reset in bulk for this command buffer,
+     * so individual queries need no reset of their own and can therefore
+     * begin without leaving the render pass. */
+    bool query_pool_reset;
     unsigned long *referenced_bitmap;
     unsigned long *referenced_inflight_bitmap;
     size_t bitmap_size;
