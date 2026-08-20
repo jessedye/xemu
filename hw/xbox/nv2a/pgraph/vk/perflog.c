@@ -63,6 +63,7 @@ static const struct {
     { NV2A_PROF_INLINE_ELEMENTS,     "inline_elements" },
     { NV2A_PROF_INLINE_BUFFERS,      "inline_buffers" },
     { NV2A_PROF_INLINE_ARRAYS,       "inline_arrays" },
+    { NV2A_PROF_FENCE_POLL,          "fence_poll" },
     /* Render-pass structure: on a tiled GPU every pass boundary is a full
      * tile store and reload, so churn here is GPU time. */
     { NV2A_PROF_PIPELINE_RENDERPASSES, "renderpasses" },

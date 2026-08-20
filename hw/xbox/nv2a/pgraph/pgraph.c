@@ -54,7 +54,24 @@ uint64_t pgraph_read(void *opaque, hwaddr addr, unsigned int size)
      * fence method runs under pg->lock, and guest MMIO writes to this
      * register are issued by the same single vCPU that polls it.
      */
+    /* Count every poll regardless of which path serves it, so an A/B can show
+     * whether this guest polls the fence at all before its frame rate is
+     * credited to the fast path. Set XEMU_FENCE_FASTPATH=0 to force the
+     * locked path for that comparison. */
     if (size == 4 && addr == NV_PGRAPH_PATT_COLOR0) {
+        nv2a_profile_inc_counter(NV2A_PROF_FENCE_POLL);
+    }
+
+    static int fence_fastpath = -1;
+    if (fence_fastpath < 0) {
+        const char *e = getenv("XEMU_FENCE_FASTPATH");
+        fence_fastpath = !(e && !strcmp(e, "0"));
+        if (!fence_fastpath) {
+            fprintf(stderr, "nv2a: fence polling takes the locked path\n");
+        }
+    }
+
+    if (fence_fastpath && size == 4 && addr == NV_PGRAPH_PATT_COLOR0) {
         uint64_t fr = qatomic_read(&pg->regs_[NV_PGRAPH_PATT_COLOR0]);
         /*
          * Pairs with the smp_wmb at the fence write site in pgraph_method,
