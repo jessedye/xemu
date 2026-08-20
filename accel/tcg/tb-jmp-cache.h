@@ -17,7 +17,7 @@
  * every consistency metric (p50 +7%, 1%-low -11%) - 4k entries of probe
  * data stay hot in a Cortex-A76's L2 where 32k entries thrash it. The cost
  * is call frequency, not capacity misses. */
-#define TB_JMP_CACHE_BITS 12
+#define TB_JMP_CACHE_BITS 13
 #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
 
 /*
