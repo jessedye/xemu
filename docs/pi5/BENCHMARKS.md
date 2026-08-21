@@ -27,6 +27,7 @@ VII), V3DV Mesa Vulkan 1.2, CMA 512 MB, Debian 12. Benchmark title: Halo 2
 
 | # | Change | Before | After | Verdict |
 |---|--------|--------|-------|---------|
+| 96 | **Halo 1 cryo bay at 5.3 fps: 89% of the render passes are occlusion queries, and the scope bug that made `XEMU_QUERY_INLINE` corrupt** | owner's own gameplay log (`...042333.csv`, not a harness run): menu 30.4 fps, collapsing to **5.30 fps / 189.73 ms p50** on entering the pod. `renderpasses` **265/frame**, of which `rpb_query` is **237** - 89%. `gpu_busy` 121.02 ms against 265 x 0.40 ms/pass = 106 ms, so the pass-break model explains **88%** of the frame. The benchmark scene I had been tuning fires 92 queries/frame; the cryo bay fires 237, which is why only this scene crawls. `resolution` in the log is `g_present.extent` - the **swapchain**, not the render target - so 1920x1080 is the TV and the upscaling theory is dead: the 3D is still drawn at 640x480 | root-caused row 95's corruption at the source rather than by capture. Vulkan requires a query to begin and end in the **same scope** (both inside one render pass instance or both outside). `begin_draw` started the query at the top and opened the pass at the bottom, so any draw following a forced pass end - `rpb_surface` is **22/frame** - recorded begin-outside/end-inside and V3DV returned undefined visibility counts. Halo gates HUD drawing on those counts, hence missing button glyphs and distorted menus. Explains why every automated capture was clean: a static menu never dirties the framebuffer mid-query. Fix `c13e946e7b` opens the pass first, guarded to the inline path | **UNMEASURED - mechanism only.** Prediction on record before building: removing 237 breaks x 0.40 ms should take the frame from 190 ms to ~95 ms, i.e. **5.3 -> ~10 fps**, with glyphs intact. If the glyphs are still missing the mechanism is wrong and this row gets a refutation, like rows 89-92 |
 | 95 | **`XEMU_QUERY_INLINE` is NOT SAFE on V3DV - it corrupts rendering** | the switch keeps occlusion queries inside the render pass, avoiding a pass break per query; Halo CE issues ~92 queries/frame and it measured **18.0 -> 25.5 fps with GPU busy 50.7 -> 14.4 ms**, the largest single win in the project | owner A/B on his own machine: with #2982 and the switch **off**, Halo 2's menu renders correctly; with the switch **on**, the menu is heavily corrupted (garbled glyph blocks) and Halo 1 loses button icons and ghosts duplicate glyphs over highlighted menu text. Turning it off fixes both | **switch removed from the launcher; stays default-off in code.** The pass breaks it eliminates are load-bearing: they force the tile store and reload that flushes stale surface content, so removing them leaves the glyph atlas sampling garbage. This is the clearest example yet that GPU work removed from a tiler is not automatically free - a 3.5x GPU-time reduction that produces wrong pixels is not a win. Also a process lesson: it was shipped on request without measurement, and three separate visual faults were misattributed to upstream picks (#2478 twice) before the owner's own on/off comparison settled it |
 | 94 | **The benchmark harness was destroying the owner's save games** | saves reported as wiped every session; theories about qcow2 writeback caching and save corruption were both wrong | `.xemu-bench.toml` and the owner's `xemu.toml` both pointed at `~/.local/share/xemu/xemu/xbox_hdd.qcow2`, and every bench run resumes a snapshot. **`loadvm` reverts the disk**, so each benchmark rolled the drive back to the snapshot date (Aug 20 05:31-12:25) and discarded everything saved since | **fixed**: the bench config now uses a private copy at `/home/pi/xbox_hdd.bench.qcow2`. This also explains Halo finding a save directory it could not load - the directory survived in the snapshot, the profile that owned it did not. Never point a snapshot-resuming harness at a disk image someone plays on |
 | 93 | **Owner-reported regressions from the upstream picks, isolated** | eight upstream cherry-picks shipped together; owner reported worse gameplay, Halo 1 button icons missing and Halo 2 menu corruption | Tony Hawk, same snapshot: all eight picks **fps -9%, p50 +25%**; drop #2929 -> fps -1%, p50 +13%; drop #2478 and #2982 as well -> **fps -3%, p50 +3%, both noise**. GPU busy flat throughout, so the cost was host-side, not rendering | **all three reverted.** #2929 defers the PGRAPH IRQ to a main-loop bottom half, buying a deadlock fix we have never hit with a main-loop turn per interrupt. #2478 maps `ONE_MINUS_DST_ALPHA` -> `ZERO` on X8R8G8B8/X1A7R8G8B8, which makes anything blended that way invisible - the mechanism matches the missing icons, but a single-frame capture of Halo 2's menu came back **clean**, so neither visual fault is reproduced yet and nothing is being reported upstream on it |
@@ -176,6 +177,40 @@ at 10.4% is the single largest symbol and was on nobody's roadmap: indirect
 branches missing the TB jump cache. The ~69% JIT tail is where M6's per-load
 `dmb ishld` fences live, invisible to symbol profiling — only the elision A/B
 can size them.
+
+## Scene map: which snapshot exercises which path (2026-08-21)
+
+Probed every bench snapshot with the counters rather than trusting its name.
+Restores were confirmed live via QMP `query-status` plus a frame-hash check, so
+these are running guests, not paused ones.
+
+| snapshot | game | fps | queries/f | rpasses | gpu_busy | begin_ends |
+|---|---|---|---|---|---|---|
+| halo | Halo 1, outdoors | 29.68 | 0.6 | 4.7 | 3.5 ms | 60 |
+| mwplay | Morrowind | 12.87 | 1.0 | 10.0 | 16.9 ms | 1172 |
+| gtaplay | GTA:SA | 25.64 | 0.0 | 15.9 | 16.7 ms | 565 |
+| thps | THPS3 | 46.23 | 0.0 | 7.7 | 10.4 ms | 288 |
+| halo2, halo3 | - | - | - | - | - | aborts on restore |
+| *owner's cryo bay* | Halo 1, Pillar of Autumn | **5.16** | **208.78** | **235.4** | **111.3 ms** | 573 |
+
+Three things follow.
+
+**No snapshot here can measure the occlusion-query path.** The most any of them
+issues is one query per frame. The query work is a property of one *scene* - a
+lit interior - not of the game. Any A/B of query handling run against these
+snapshots measures nothing, however clean its numbers look.
+
+**Most of these titles are CPU-bound, not GPU-bound.** Morrowind spends 16.9 ms
+of a 77.7 ms frame on the GPU: 78% of that frame is guest emulation. GTA is
+16.7 of 39.0. Vulkan work cannot reach them; they belong to roadmap item 5.
+The cryo bay is the exception and the only strongly GPU-bound scene measured so
+far, which is why it is also the only place a render-pass fix can pay.
+
+**halo2 and halo3 abort on restore** with
+`gp_ep.c:60: scatter_gather_rw: Assertion 'page_entry <= max_sge' failed` - the
+MCPX APU scatter-gather table. Checked against all 21 owner session logs: zero
+occurrences, so this is a snapshot-restore artifact and not something reachable
+in play. Those two snapshots are unusable; the assertion is not a live bug.
 
 ## Open follow-ups
 
