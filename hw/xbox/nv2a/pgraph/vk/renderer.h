@@ -78,7 +78,29 @@ typedef struct PipelineBinding {
     VkRenderPass render_pass;
     unsigned int draw_time;
     bool has_dynamic_line_width;
+    bool compile_pending;
 } PipelineBinding;
+
+typedef struct PipelineCompileJob {
+    QSIMPLEQ_ENTRY(PipelineCompileJob) entry;
+    PipelineBinding *binding;
+
+    VkGraphicsPipelineCreateInfo create_info;
+    VkPipelineShaderStageCreateInfo stages[3];
+    VkPipelineVertexInputStateCreateInfo vertex_input;
+    VkVertexInputBindingDescription bindings[NV2A_VERTEXSHADER_ATTRIBUTES];
+    VkVertexInputAttributeDescription attributes[NV2A_VERTEXSHADER_ATTRIBUTES];
+    VkPipelineInputAssemblyStateCreateInfo input_assembly;
+    VkPipelineViewportStateCreateInfo viewport_state;
+    VkPipelineRasterizationStateCreateInfo rasterizer;
+    VkPipelineMultisampleStateCreateInfo multisampling;
+    VkPipelineDepthStencilStateCreateInfo depth_stencil;
+    VkPipelineColorBlendAttachmentState blend_attachment;
+    VkPipelineColorBlendStateCreateInfo color_blending;
+    VkDynamicState dynamic_states[3];
+    VkPipelineDynamicStateCreateInfo dynamic_state;
+    bool has_depth_stencil;
+} PipelineCompileJob;
 
 enum Buffer {
     BUFFER_STAGING_DST,
@@ -402,6 +424,14 @@ typedef struct PGRAPHVkState {
 
     Lru pipeline_cache;
     VkPipelineCache vk_pipeline_cache;
+    QemuMutex pipeline_cache_lock;
+
+    QemuThread pipeline_compile_thread;
+    QemuMutex pipeline_compile_lock;
+    QemuCond pipeline_compile_cond;
+    QSIMPLEQ_HEAD(, PipelineCompileJob) pipeline_compile_queue;
+    bool pipeline_compile_running;
+    bool pipeline_compile_started;
     PipelineBinding *pipeline_cache_entries;
     PipelineBinding *pipeline_binding;
     bool pipeline_binding_changed;
