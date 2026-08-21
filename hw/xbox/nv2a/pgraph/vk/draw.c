@@ -99,6 +99,13 @@ static void pipeline_cache_entry_init(Lru *lru, LruNode *node,
     snode->draw_time = 0;
 }
 
+static bool pipeline_cache_entry_pre_evict(Lru *lru, LruNode *node)
+{
+    PipelineBinding *snode = container_of(node, PipelineBinding, node);
+
+    return !qatomic_read(&snode->compile_pending);
+}
+
 static void pipeline_cache_entry_post_evict(Lru *lru, LruNode *node)
 {
     PGRAPHVkState *r = container_of(lru, PGRAPHVkState, pipeline_cache);
@@ -238,6 +245,7 @@ static void pipeline_compile_now(PGRAPHVkState *r, PipelineCompileJob *job)
     job->binding->render_pass = job->create_info.renderPass;
     qatomic_store_release(&job->binding->pipeline, pipeline);
     qatomic_set(&job->binding->compile_pending, false);
+    qatomic_dec(&r->pipeline_compile_inflight);
 }
 
 static void *pipeline_compile_thread_fn(void *opaque)
@@ -265,8 +273,17 @@ static void *pipeline_compile_thread_fn(void *opaque)
     return NULL;
 }
 
+#define PIPELINE_COMPILE_MAX_INFLIGHT 64
+
+static bool pipeline_compile_has_capacity(PGRAPHVkState *r)
+{
+    return qatomic_read(&r->pipeline_compile_inflight) <
+           PIPELINE_COMPILE_MAX_INFLIGHT;
+}
+
 static void pipeline_compile_submit(PGRAPHVkState *r, PipelineCompileJob *job)
 {
+    qatomic_inc(&r->pipeline_compile_inflight);
     qemu_mutex_lock(&r->pipeline_compile_lock);
     QSIMPLEQ_INSERT_TAIL(&r->pipeline_compile_queue, job, entry);
     qemu_cond_signal(&r->pipeline_compile_cond);
@@ -356,6 +373,7 @@ static void init_pipeline_cache(PGRAPHState *pg)
 
     r->pipeline_cache.init_node = pipeline_cache_entry_init;
     r->pipeline_cache.compare_nodes = pipeline_cache_entry_compare;
+    r->pipeline_cache.pre_node_evict = pipeline_cache_entry_pre_evict;
     r->pipeline_cache.post_node_evict = pipeline_cache_entry_post_evict;
 
     pipeline_cache_live = true;
@@ -1252,7 +1270,8 @@ static void create_pipeline(PGRAPHState *pg)
     snode->render_pass = pipeline_create_info.renderPass;
     snode->draw_time = pg->draw_time;
 
-    if (pgraph_vk_async_pipeline() && !pg->zpass_pixel_count_enable) {
+    if (pgraph_vk_async_pipeline() && !pg->zpass_pixel_count_enable &&
+        pipeline_compile_has_capacity(r)) {
         PipelineCompileJob *job = g_new0(PipelineCompileJob, 1);
 
         job->binding = snode;

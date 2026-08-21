@@ -432,6 +432,7 @@ typedef struct PGRAPHVkState {
     QSIMPLEQ_HEAD(, PipelineCompileJob) pipeline_compile_queue;
     bool pipeline_compile_running;
     bool pipeline_compile_started;
+    int pipeline_compile_inflight;
     PipelineBinding *pipeline_cache_entries;
     PipelineBinding *pipeline_binding;
     bool pipeline_binding_changed;
