@@ -1699,8 +1699,21 @@ static void begin_draw(PGRAPHState *pg)
 
     assert(r->in_command_buffer);
 
+    bool must_bind_pipeline = r->pipeline_binding_changed;
+
     // Visibility testing
     bool split_pass_for_query = !r->query_pool_reset;
+
+    /* An occlusion query has to begin and end in the same scope: either both
+     * inside one render pass instance or both outside it. The inline path closes
+     * a query from end_render_pass(), so beginning one while no pass is open
+     * pairs a begin outside the pass with an end inside it and the visibility
+     * count comes back undefined. Open the pass first. */
+    if (!split_pass_for_query && !pg->clearing && !r->in_render_pass &&
+        pg->zpass_pixel_count_enable) {
+        begin_render_pass(pg);
+        must_bind_pipeline = true;
+    }
 
     if (!pg->clearing && pg->zpass_pixel_count_enable) {
         if (r->new_query_needed && r->query_in_flight) {
@@ -1725,8 +1738,6 @@ static void begin_draw(PGRAPHState *pg)
     if (pg->clearing && !pgraph_vk_inline_clears()) {
         end_render_pass_for(r, NV2A_PROF_RPB_CLEAR);
     }
-
-    bool must_bind_pipeline = r->pipeline_binding_changed;
 
     if (!r->in_render_pass) {
         begin_render_pass(pg);
