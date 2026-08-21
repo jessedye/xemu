@@ -1606,21 +1606,33 @@ void pgraph_vk_ensure_command_buffer(PGRAPHState *pg)
     }
 }
 
-void pgraph_vk_ensure_not_in_render_pass(PGRAPHState *pg)
+/* Three callers force a pass to end for surface reasons and shared one counter,
+ * so a log could not say which. With query breaks gone this is the largest
+ * remaining source of pass boundaries, and the next thing worth attacking is
+ * whichever of the three dominates. */
+void pgraph_vk_ensure_not_in_render_pass_for(PGRAPHState *pg, unsigned counter)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
+    if (r->in_render_pass) {
+        nv2a_profile_inc_counter(counter);
+    }
     end_render_pass_for(r, NV2A_PROF_RPB_SURFACE);
     if (r->query_in_flight) {
         end_query(r);
     }
 }
 
+void pgraph_vk_ensure_not_in_render_pass(PGRAPHState *pg)
+{
+    pgraph_vk_ensure_not_in_render_pass_for(pg, NV2A_PROF_RPB_SURF_BIND);
+}
+
 VkCommandBuffer pgraph_vk_begin_nondraw_commands(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
     pgraph_vk_ensure_command_buffer(pg);
-    pgraph_vk_ensure_not_in_render_pass(pg);
+    pgraph_vk_ensure_not_in_render_pass_for(pg, NV2A_PROF_RPB_NONDRAW);
     return r->command_buffer;
 }
 
@@ -1659,7 +1671,7 @@ static void begin_pre_draw(PGRAPHState *pg)
     bool render_pass_dirty = r->pipeline_binding->render_pass != r->render_pass;
 
     if (r->framebuffer_dirty || render_pass_dirty) {
-        pgraph_vk_ensure_not_in_render_pass(pg);
+        pgraph_vk_ensure_not_in_render_pass_for(pg, NV2A_PROF_RPB_FB_DIRTY);
     }
     if (render_pass_dirty) {
         r->render_pass = r->pipeline_binding->render_pass;

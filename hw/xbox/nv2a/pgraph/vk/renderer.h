@@ -704,6 +704,7 @@ void pgraph_vk_flush_draw(NV2AState *d);
 void pgraph_vk_begin_command_buffer(PGRAPHState *pg);
 void pgraph_vk_ensure_command_buffer(PGRAPHState *pg);
 void pgraph_vk_ensure_not_in_render_pass(PGRAPHState *pg);
+void pgraph_vk_ensure_not_in_render_pass_for(PGRAPHState *pg, unsigned counter);
 
 VkCommandBuffer pgraph_vk_begin_nondraw_commands(PGRAPHState *pg);
 void pgraph_vk_end_nondraw_commands(PGRAPHState *pg, VkCommandBuffer cmd);
