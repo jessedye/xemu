@@ -1218,8 +1218,14 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
      *
      * The copy path's own transitions already double as the write-to-sample
      * barrier, so falling back to it here is correct by construction. Alias
-     * only where it is free, which is where its measured benefit came from. */
-    if (alias && r->in_command_buffer &&
+     * only where it is free, which is where its measured benefit came from.
+     *
+     * The in_render_pass test is what makes this free: a barrier issued when
+     * no pass is open costs no boundary at all. Without it the fallback fires
+     * 24 times a frame in Halo 1's cryo bay, which needs none, and 10.5 in
+     * GTA where only 4 cost anything - measured at -4.6% fps there, nearly
+     * the whole penalty of abandoning aliasing outright. */
+    if (alias && r->in_render_pass && r->in_command_buffer &&
         surface->draw_time >= r->command_buffer_start_time) {
         nv2a_profile_inc_counter(NV2A_PROF_ALIAS_DOWNGRADE);
         alias = false;
