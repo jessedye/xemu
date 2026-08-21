@@ -1347,7 +1347,7 @@ static bool pgraph_vk_inline_queries(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("XEMU_QUERY_INLINE") != NULL;
+        cached = pgraph_vk_env_opt_in("XEMU_QUERY_INLINE");
         if (cached) {
             fprintf(stderr, "vk: occlusion queries kept inside render passes\n");
         }
@@ -1366,7 +1366,7 @@ static bool pgraph_vk_inline_clears(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("XEMU_CLEAR_INLINE") != NULL;
+        cached = pgraph_vk_env_opt_in("XEMU_CLEAR_INLINE");
         if (cached) {
             fprintf(stderr, "vk: clears kept inside render passes\n");
         }

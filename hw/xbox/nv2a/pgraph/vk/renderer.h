@@ -648,6 +648,16 @@ void pgraph_vk_trim_texture_cache(PGRAPHState *pg);
 // shaders.c
 void pgraph_vk_init_shaders(PGRAPHState *pg);
 void pgraph_vk_finalize_shaders(PGRAPHState *pg);
+/* Opt-in tuning flags are read from the environment. Honour the value so that
+ * setting one to "0" turns it off: the flags that default on already do, and a
+ * flag that ignores its value produced an A/B whose "disabled" arm was in fact
+ * enabled, reporting the two configurations as identical. */
+static inline bool pgraph_vk_env_opt_in(const char *name)
+{
+    const char *v = getenv(name);
+    return v && v[0] && strcmp(v, "0") && strcmp(v, "false") && strcmp(v, "off");
+}
+
 void pgraph_vk_update_descriptor_sets(PGRAPHState *pg);
 void pgraph_vk_bind_shaders(PGRAPHState *pg);
 

@@ -55,7 +55,7 @@ static void pgraph_vk_init(NV2AState *d, Error **errp)
 
     pg->vk_renderer_state = (PGRAPHVkState *)g_malloc0(sizeof(PGRAPHVkState));
     pg->vk_renderer_state->surface_general_layout =
-        getenv("XEMU_SURF_TEX_SAMPLE") != NULL;
+        pgraph_vk_env_opt_in("XEMU_SURF_TEX_SAMPLE");
     if (pg->vk_renderer_state->surface_general_layout) {
         fprintf(stderr, "vk: color surfaces in GENERAL layout for direct "
                         "sampling\n");
@@ -184,7 +184,7 @@ static bool pgraph_vk_present_on_flip(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        cached = getenv("XEMU_PRESENT_ON_FLIP") != NULL;
+        cached = pgraph_vk_env_opt_in("XEMU_PRESENT_ON_FLIP");
         if (cached) {
             fprintf(stderr, "vk: presenting at guest flip time\n");
         }
