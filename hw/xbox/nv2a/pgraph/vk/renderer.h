@@ -79,6 +79,7 @@ typedef struct PipelineBinding {
     unsigned int draw_time;
     bool has_dynamic_line_width;
     bool compile_pending;
+    int compile_skips;
 } PipelineBinding;
 
 typedef struct PipelineCompileJob {
