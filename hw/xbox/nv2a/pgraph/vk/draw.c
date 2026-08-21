@@ -1628,12 +1628,25 @@ void pgraph_vk_ensure_not_in_render_pass(PGRAPHState *pg)
     pgraph_vk_ensure_not_in_render_pass_for(pg, NV2A_PROF_RPB_SURF_BIND);
 }
 
-VkCommandBuffer pgraph_vk_begin_nondraw_commands(PGRAPHState *pg)
+/* Three sites issue non-draw commands and share one counter. Two copy a
+ * surface into a texture; the third only issues an execution barrier, which
+ * unlike a transfer could in principle stay inside the pass given a subpass
+ * self-dependency. Whether that is worth doing depends on which dominates. */
+VkCommandBuffer pgraph_vk_begin_nondraw_commands_for(PGRAPHState *pg,
+                                                    unsigned counter)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
     pgraph_vk_ensure_command_buffer(pg);
+    if (r->in_render_pass) {
+        nv2a_profile_inc_counter(counter);
+    }
     pgraph_vk_ensure_not_in_render_pass_for(pg, NV2A_PROF_RPB_NONDRAW);
     return r->command_buffer;
+}
+
+VkCommandBuffer pgraph_vk_begin_nondraw_commands(PGRAPHState *pg)
+{
+    return pgraph_vk_begin_nondraw_commands_for(pg, NV2A_PROF_RPB_ND_COPY);
 }
 
 void pgraph_vk_end_nondraw_commands(PGRAPHState *pg, VkCommandBuffer cmd)

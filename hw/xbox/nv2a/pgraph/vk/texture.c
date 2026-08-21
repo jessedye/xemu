@@ -1214,7 +1214,8 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
      * explicit one. */
     if (alias && r->in_command_buffer &&
         surface->draw_time >= r->command_buffer_start_time) {
-        VkCommandBuffer cmd = pgraph_vk_begin_nondraw_commands(pg);
+        VkCommandBuffer cmd = pgraph_vk_begin_nondraw_commands_for(
+            pg, NV2A_PROF_RPB_ND_ALIAS);
         pgraph_vk_transition_image_layout(pg, cmd, surface->image,
                                           surface->host_fmt.vk_format,
                                           VK_IMAGE_LAYOUT_GENERAL,
