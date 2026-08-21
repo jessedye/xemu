@@ -36,8 +36,8 @@ void pgraph_vk_draw_begin(NV2AState *d)
     bool mask_blue = control_0 & NV_PGRAPH_CONTROL_0_BLUE_WRITE_ENABLE;
     bool color_write = mask_alpha || mask_red || mask_green || mask_blue;
     bool depth_test = control_0 & NV_PGRAPH_CONTROL_0_ZENABLE;
-    bool stencil_test = pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) &
-                        NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
+    bool stencil_test =
+        pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) & NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
     bool is_nop_draw = !(color_write || depth_test || stencil_test);
 
     pgraph_vk_surface_update(d, true, true, depth_test || stencil_test);
@@ -62,8 +62,7 @@ static VkPrimitiveTopology get_primitive_topology(PGRAPHState *pg)
     case PRIM_TYPE_LINES:
         return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     case PRIM_TYPE_LINE_LOOP:
-        // FIXME: line strips, except that the first and last vertices are also
-        // used as a line
+        // FIXME: line strips, except that the first and last vertices are also used as a line
         return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
     case PRIM_TYPE_LINE_STRIP:
         return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
@@ -383,8 +382,7 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
             .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
         depth_reference = (VkAttachmentReference){
-            num_attachments,
-            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            num_attachments, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
         num_attachments++;
     }
@@ -405,13 +403,15 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
     }
 
     if (zeta) {
-        dependency.srcStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        dependency.srcStageMask |=
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         dependency.srcAccessMask |=
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        dependency.dstStageMask |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        dependency.dstStageMask |=
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         dependency.dstAccessMask |=
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -439,8 +439,7 @@ static VkRenderPass create_render_pass(PGRAPHVkState *r, RenderPassState *state)
     return render_pass;
 }
 
-static VkRenderPass add_new_render_pass(PGRAPHVkState *r,
-                                        RenderPassState *state)
+static VkRenderPass add_new_render_pass(PGRAPHVkState *r, RenderPassState *state)
 {
     RenderPass new_pass;
     memcpy(&new_pass.state, state, sizeof(*state));
@@ -483,7 +482,7 @@ static void create_frame_buffer(PGRAPHState *pg)
         attachments[attachment_count++] = r->zeta_binding->image_view;
     }
 
-    SurfaceBinding *binding = r->color_binding ?: r->zeta_binding;
+    SurfaceBinding *binding = r->color_binding ? : r->zeta_binding;
 
     VkFramebufferCreateInfo create_info = {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -582,7 +581,7 @@ static void create_clear_pipeline(PGRAPHState *pg)
                 .module = r->solid_frag_module->module,
                 .pName = "main",
             };
-    }
+     }
 
     VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -840,8 +839,8 @@ static void create_pipeline(PGRAPHState *pg)
     uint32_t control_0 = pgraph_reg_r(pg, NV_PGRAPH_CONTROL_0);
     bool depth_test = control_0 & NV_PGRAPH_CONTROL_0_ZENABLE;
     bool depth_write = !!(control_0 & NV_PGRAPH_CONTROL_0_ZWRITEENABLE);
-    bool stencil_test = pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) &
-                        NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
+    bool stencil_test =
+        pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) & NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
 
     int num_active_shader_stages = 0;
     VkPipelineShaderStageCreateInfo shader_stages[3];
@@ -898,8 +897,8 @@ static void create_pipeline(PGRAPHState *pg)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .depthClampEnable = VK_TRUE,
         .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = pgraph_polygon_mode_vk_map[r->shader_binding->state.geom
-                                                      .polygon_front_mode],
+        .polygonMode = pgraph_polygon_mode_vk_map[r->shader_binding->state
+                                                      .geom.polygon_front_mode],
         .lineWidth = 1.0f,
         .frontFace = (pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER) &
                       NV_PGRAPH_SETUPRASTER_FRONTFACE) ?
@@ -909,8 +908,7 @@ static void create_pipeline(PGRAPHState *pg)
         .pNext = rasterizer_next_struct,
     };
 
-    if (pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER) &
-        NV_PGRAPH_SETUPRASTER_CULLENABLE) {
+    if (pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER) & NV_PGRAPH_SETUPRASTER_CULLENABLE) {
         uint32_t cull_face = GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_SETUPRASTER),
                                       NV_PGRAPH_SETUPRASTER_CULLCTRL);
         assert(cull_face < ARRAY_SIZE(pgraph_cull_face_vk_map));
@@ -932,8 +930,8 @@ static void create_pipeline(PGRAPHState *pg)
 
     if (depth_test) {
         depth_stencil.depthTestEnable = VK_TRUE;
-        uint32_t depth_func = GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_CONTROL_0),
-                                       NV_PGRAPH_CONTROL_0_ZFUNC);
+        uint32_t depth_func =
+            GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_CONTROL_0), NV_PGRAPH_CONTROL_0_ZFUNC);
         assert(depth_func < ARRAY_SIZE(pgraph_depth_func_vk_map));
         depth_stencil.depthCompareOp = pgraph_depth_func_vk_map[depth_func];
     }
@@ -990,12 +988,10 @@ static void create_pipeline(PGRAPHState *pg)
     if (pgraph_reg_r(pg, NV_PGRAPH_BLEND) & NV_PGRAPH_BLEND_EN) {
         color_blend_attachment.blendEnable = VK_TRUE;
 
-        const uint32_t blend_reg = pgraph_reg_r(pg, NV_PGRAPH_BLEND);
-        uint32_t sfactor = fixup_blend_factor_for_surface(
-            GET_MASK(blend_reg, NV_PGRAPH_BLEND_SFACTOR), &pg->surface_shape);
-        uint32_t dfactor = fixup_blend_factor_for_surface(
-            GET_MASK(blend_reg, NV_PGRAPH_BLEND_DFACTOR), &pg->surface_shape);
-
+        uint32_t sfactor =
+            GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_BLEND), NV_PGRAPH_BLEND_SFACTOR);
+        uint32_t dfactor =
+            GET_MASK(pgraph_reg_r(pg, NV_PGRAPH_BLEND), NV_PGRAPH_BLEND_DFACTOR);
         assert(sfactor < ARRAY_SIZE(pgraph_blend_factor_vk_map));
         assert(dfactor < ARRAY_SIZE(pgraph_blend_factor_vk_map));
         color_blend_attachment.srcColorBlendFactor =
@@ -1147,7 +1143,8 @@ static void push_vertex_attr_values(PGRAPHState *pg)
     if (num_uniform_attrs > 0) {
         vkCmdPushConstants(r->command_buffer, r->pipeline_binding->layout,
                            VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           num_uniform_attrs * 4 * sizeof(float), &values);
+                           num_uniform_attrs * 4 * sizeof(float),
+                           &values);
     }
 }
 
@@ -1297,6 +1294,7 @@ static void begin_render_pass(PGRAPHState *pg)
     vkCmdBeginRenderPass(r->command_buffer, &render_pass_begin_info,
                          VK_SUBPASS_CONTENTS_INLINE);
     r->in_render_pass = true;
+
 }
 
 static void end_render_pass(PGRAPHVkState *r)
@@ -1326,8 +1324,7 @@ static void end_render_pass_for(PGRAPHVkState *r, unsigned counter)
 }
 
 const enum NV2A_PROF_COUNTERS_ENUM finish_reason_to_counter_enum[] = {
-    [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] =
-        NV2A_PROF_FINISH_VERTEX_BUFFER_DIRTY,
+    [VK_FINISH_REASON_VERTEX_BUFFER_DIRTY] = NV2A_PROF_FINISH_VERTEX_BUFFER_DIRTY,
     [VK_FINISH_REASON_SURFACE_CREATE] = NV2A_PROF_FINISH_SURFACE_CREATE,
     [VK_FINISH_REASON_SURFACE_DOWN] = NV2A_PROF_FINISH_SURFACE_DOWN,
     [VK_FINISH_REASON_NEED_BUFFER_SPACE] = NV2A_PROF_FINISH_NEED_BUFFER_SPACE,
@@ -1427,11 +1424,10 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         }
         VK_CHECK(vkEndCommandBuffer(r->command_buffer));
 
-        VkCommandBuffer cmd =
-            pgraph_vk_begin_single_time_commands(pg); // FIXME: Cleanup
+        VkCommandBuffer cmd = pgraph_vk_begin_single_time_commands(pg); // FIXME: Cleanup
         sync_staging_buffer(pg, cmd, BUFFER_INDEX_STAGING, BUFFER_INDEX);
         sync_staging_buffer(pg, cmd, BUFFER_VERTEX_INLINE_STAGING,
-                            BUFFER_VERTEX_INLINE);
+                                BUFFER_VERTEX_INLINE);
         sync_staging_buffer(pg, cmd, BUFFER_UNIFORM_STAGING, BUFFER_UNIFORM);
         /* The upload bitmap survives until the submission is reclaimed: it is
          * what lets the vertex-RAM guard see pages the in-flight draws still
@@ -1472,6 +1468,7 @@ void pgraph_vk_finish(PGRAPHState *pg, FinishReason finish_reason)
         if (finish_reason == VK_FINISH_REASON_FLIP_STALL ||
             (r->submit_count - r->allocator_last_submit_index) >
                 max_num_submits_before_budget_update) {
+
             // VMA queries budget via vmaSetCurrentFrameIndex
             vmaSetCurrentFrameIndex(r->allocator, r->submit_count);
             r->allocator_last_submit_index = r->submit_count;
@@ -1817,8 +1814,8 @@ void pgraph_vk_draw_end(NV2AState *d)
     bool mask_blue = control_0 & NV_PGRAPH_CONTROL_0_BLUE_WRITE_ENABLE;
     bool color_write = mask_alpha || mask_red || mask_green || mask_blue;
     bool depth_test = control_0 & NV_PGRAPH_CONTROL_0_ZENABLE;
-    bool stencil_test = pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) &
-                        NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
+    bool stencil_test =
+        pgraph_reg_r(pg, NV_PGRAPH_CONTROL_1) & NV_PGRAPH_CONTROL_1_STENCIL_TEST_ENABLE;
     bool is_nop_draw = !(color_write || depth_test || stencil_test);
 
     if (is_nop_draw) {
@@ -1882,8 +1879,8 @@ static void sync_vertex_ram_buffer(PGRAPHState *pg)
         end_addr = ROUND_UP(end_addr, TARGET_PAGE_SIZE);
 
         NV2A_VK_DPRINTF("- %d: %08" HWADDR_PRIx " %zd bytes"
-                        " -> %08" HWADDR_PRIx " %zd bytes",
-                        i, r->vertex_ram_buffer_syncs[i].addr,
+                          " -> %08" HWADDR_PRIx " %zd bytes", i,
+                        r->vertex_ram_buffer_syncs[i].addr,
                         r->vertex_ram_buffer_syncs[i].size, start_addr,
                         end_addr - start_addr);
 
@@ -1925,7 +1922,7 @@ static void sync_vertex_ram_buffer(PGRAPHState *pg)
         hwaddr addr = merged[i].addr;
         VkDeviceSize size = merged[i].size;
 
-        NV2A_VK_DPRINTF("- %d: %08" HWADDR_PRIx " %zd bytes", i, addr, size);
+        NV2A_VK_DPRINTF("- %d: %08"HWADDR_PRIx" %zd bytes", i, addr, size);
 
         /* A hot range is not mirrored at all - remap_unaligned_attributes
          * routes every attribute in it through the inline ring, reading guest
@@ -2003,8 +2000,9 @@ void pgraph_vk_clear_surface(NV2AState *d, uint32_t parameter)
                          write_zeta ? " zeta" : "");
 
     begin_pre_draw(pg);
-    pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
-                                 "Clear %08" HWADDR_PRIx, binding->vram_addr);
+    pgraph_vk_begin_debug_marker(r, r->command_buffer,
+        RGBA_BLUE, "Clear %08" HWADDR_PRIx,
+        binding->vram_addr);
     begin_draw(pg);
 
     // FIXME: What does hardware do when min >= max?
@@ -2189,30 +2187,29 @@ static bool ensure_buffer_space(PGRAPHState *pg, int index, VkDeviceSize size)
     return false;
 }
 
-static void get_size_and_count_for_format(VkFormat fmt, size_t *size,
-                                          size_t *count)
+static void get_size_and_count_for_format(VkFormat fmt, size_t *size, size_t *count)
 {
     static const struct {
         size_t size;
         size_t count;
     } table[] = {
-        [VK_FORMAT_R8_UNORM] = { 1, 1 },
-        [VK_FORMAT_R8G8_UNORM] = { 1, 2 },
-        [VK_FORMAT_R8G8B8_UNORM] = { 1, 3 },
-        [VK_FORMAT_R8G8B8A8_UNORM] = { 1, 4 },
-        [VK_FORMAT_R16_SNORM] = { 2, 1 },
-        [VK_FORMAT_R16G16_SNORM] = { 2, 2 },
-        [VK_FORMAT_R16G16B16_SNORM] = { 2, 3 },
-        [VK_FORMAT_R16G16B16A16_SNORM] = { 2, 4 },
-        [VK_FORMAT_R16_SSCALED] = { 2, 1 },
-        [VK_FORMAT_R16G16_SSCALED] = { 2, 2 },
-        [VK_FORMAT_R16G16B16_SSCALED] = { 2, 3 },
-        [VK_FORMAT_R16G16B16A16_SSCALED] = { 2, 4 },
-        [VK_FORMAT_R32_SFLOAT] = { 4, 1 },
-        [VK_FORMAT_R32G32_SFLOAT] = { 4, 2 },
-        [VK_FORMAT_R32G32B32_SFLOAT] = { 4, 3 },
-        [VK_FORMAT_R32G32B32A32_SFLOAT] = { 4, 4 },
-        [VK_FORMAT_R32_SINT] = { 4, 1 },
+        [VK_FORMAT_R8_UNORM] =              { 1, 1 },
+        [VK_FORMAT_R8G8_UNORM] =            { 1, 2 },
+        [VK_FORMAT_R8G8B8_UNORM] =          { 1, 3 },
+        [VK_FORMAT_R8G8B8A8_UNORM] =        { 1, 4 },
+        [VK_FORMAT_R16_SNORM] =             { 2, 1 },
+        [VK_FORMAT_R16G16_SNORM] =          { 2, 2 },
+        [VK_FORMAT_R16G16B16_SNORM] =       { 2, 3 },
+        [VK_FORMAT_R16G16B16A16_SNORM] =    { 2, 4 },
+        [VK_FORMAT_R16_SSCALED] =           { 2, 1 },
+        [VK_FORMAT_R16G16_SSCALED] =        { 2, 2 },
+        [VK_FORMAT_R16G16B16_SSCALED] =     { 2, 3 },
+        [VK_FORMAT_R16G16B16A16_SSCALED] =  { 2, 4 },
+        [VK_FORMAT_R32_SFLOAT] =            { 4, 1 },
+        [VK_FORMAT_R32G32_SFLOAT] =         { 4, 2 },
+        [VK_FORMAT_R32G32B32_SFLOAT] =      { 4, 3 },
+        [VK_FORMAT_R32G32B32A32_SFLOAT] =   { 4, 4 },
+        [VK_FORMAT_R32_SINT] =              { 4, 1 },
     };
 
     assert(fmt < ARRAY_SIZE(table));
@@ -2237,7 +2234,7 @@ static VertexBufferRemap remap_unaligned_attributes(PGRAPHState *pg,
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    VertexBufferRemap remap = { 0 };
+    VertexBufferRemap remap = {0};
 
     VkDeviceAddress output_offset = 0;
 
@@ -2253,8 +2250,7 @@ static VertexBufferRemap remap_unaligned_attributes(PGRAPHState *pg,
             &r->vertex_attribute_descriptions[desc_loc];
 
         size_t element_size, element_count;
-        get_size_and_count_for_format(attr->format, &element_size,
-                                      &element_count);
+        get_size_and_count_for_format(attr->format, &element_size, &element_count);
 
         bool offset_valid =
             (r->vertex_attribute_offsets[attr_id] % element_size == 0);
@@ -2280,8 +2276,8 @@ static VertexBufferRemap remap_unaligned_attributes(PGRAPHState *pg,
         //         remap.map[attr_id].old_stride,
         //         remap.map[attr_id].new_stride);
 
-        output_offset = remap.map[attr_id].offset +
-                        remap.map[attr_id].new_stride * num_vertices;
+        output_offset =
+            remap.map[attr_id].offset + remap.map[attr_id].new_stride * num_vertices;
         desc->stride = remap.map[attr_id].new_stride;
     }
 
@@ -2289,14 +2285,11 @@ static VertexBufferRemap remap_unaligned_attributes(PGRAPHState *pg,
 
     // reserve space
     if (remap.attributes) {
-        StorageBuffer *buffer =
-            &r->storage_buffers[BUFFER_VERTEX_INLINE_STAGING];
+        StorageBuffer *buffer = &r->storage_buffers[BUFFER_VERTEX_INLINE_STAGING];
         VkDeviceSize starting_offset = ROUND_UP(buffer->buffer_offset, 16);
         size_t total_space_required =
-            (starting_offset - buffer->buffer_offset) +
-            remap.buffer_space_required;
-        ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING,
-                            total_space_required);
+            (starting_offset - buffer->buffer_offset) + remap.buffer_space_required;
+        ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING, total_space_required);
         buffer->buffer_offset = ROUND_UP(buffer->buffer_offset, 16);
     }
 
@@ -2377,8 +2370,7 @@ void pgraph_vk_flush_draw(NV2AState *d)
         uint32_t max_element = 0;
         for (int i = 0; i < pg->draw_arrays_length; i++) {
             min_element = MIN(pg->draw_arrays_start[i], min_element);
-            max_element = MAX(max_element, pg->draw_arrays_start[i] +
-                                               pg->draw_arrays_count[i]);
+            max_element = MAX(max_element, pg->draw_arrays_start[i] + pg->draw_arrays_count[i]);
         }
         sync_vertex_ram_buffer(pg);
         VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element);
@@ -2421,12 +2413,10 @@ void pgraph_vk_flush_draw(NV2AState *d)
             d, min_element, max_element, false, 0,
             pg->inline_elements[pg->inline_elements_length - 1]);
         sync_vertex_ram_buffer(pg);
-        VertexBufferRemap remap =
-            remap_unaligned_attributes(pg, max_element + 1);
+        VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element + 1);
 
         begin_pre_draw(pg);
-        copy_remapped_attributes_to_inline_buffer(pg, remap, 0,
-                                                  max_element + 1);
+        copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element + 1);
         VkDeviceSize buffer_offset = pgraph_vk_update_index_buffer(
             pg, pg->inline_elements, index_data_size);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
@@ -2485,7 +2475,7 @@ void pgraph_vk_flush_draw(NV2AState *d)
 
         VkDeviceSize inline_array_data_size = pg->inline_array_length * 4;
         ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING,
-                            inline_array_data_size);
+                               inline_array_data_size);
 
         unsigned int offset = 0;
         for (int i = 0; i < NV2A_VERTEXSHADER_ATTRIBUTES; i++) {
