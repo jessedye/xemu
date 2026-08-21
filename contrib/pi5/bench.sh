@@ -74,7 +74,10 @@ trap cleanup EXIT
 export DISPLAY=:1
 sudo X :1 -nolisten tcp vt8 >/dev/null 2>&1 &
 sleep 8
-if [ "$MODE" = 1080p ]; then
+if [ "$MODE" = 720p ]; then
+    xrandr --output "$(xrandr | awk '/ connected/{print $1; exit}')" \
+        --mode 1280x720 >/dev/null 2>&1
+elif [ "$MODE" = 1080p ]; then
     xrandr --output "$(xrandr | awk '/ connected/{print $1; exit}')" \
         --mode 1920x1080 >/dev/null 2>&1
 fi
@@ -90,6 +93,19 @@ ENV=(XEMU_PERFLOG="$OUT/$TAG.csv" XEMU_FPS=1
      XEMU_SURF_TEX_SAMPLE="${XEMU_SURF_TEX_SAMPLE:-1}")
 [ "$BACKEND" = vk ] && ENV+=(XEMU_DISPLAY_BACKEND=vulkan)
 [ "$ASYNC" = 1 ] && ENV+=(XEMU_ASYNC_FLIP=1)
+
+# The harness must measure what actually ships. This diverged twice: once when
+# the launcher gained TSO/HARD_FPU/SURF_TEX_SAMPLE (ledger row 57) and again
+# when it gained XEMU_QUERY_INLINE, so every A/B in between compared a
+# configuration nobody plays. Warn rather than silently disagree.
+_launcher=/opt/retropie/emulators/xemu/xemu.sh
+if [ -r "$_launcher" ]; then
+    for _v in $(grep -oE "^export XEMU_[A-Z_]+" "$_launcher" | awk '{print $2}'); do
+        case "$_v" in XEMU_PERFLOG|XEMU_FPS|XEMU_DISPLAY_BACKEND) continue ;; esac
+        printf '%s\n' "${ENV[@]}" | grep -q "^$_v=" ||
+            echo "warning: launcher sets $_v, this benchmark does not" >&2
+    done
+fi
 
 {
     echo "date=$(date -Is)"
