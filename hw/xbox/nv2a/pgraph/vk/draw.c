@@ -189,6 +189,129 @@ static void save_pipeline_cache(PGRAPHVkState *r)
     g_file_set_contents(path, (const char *)data, size, NULL);
 }
 
+static bool pgraph_vk_async_pipeline(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        cached = pgraph_vk_env_opt_in("XEMU_ASYNC_PIPELINE");
+        if (cached) {
+            fprintf(stderr, "vk: pipelines compile on a worker thread\n");
+        }
+    }
+    return cached == 1;
+}
+
+static void pipeline_job_relink(PipelineCompileJob *job)
+{
+    job->vertex_input.pVertexBindingDescriptions = job->bindings;
+    job->vertex_input.pVertexAttributeDescriptions = job->attributes;
+    job->color_blending.pAttachments = &job->blend_attachment;
+    job->dynamic_state.pDynamicStates = job->dynamic_states;
+
+    job->create_info.pStages = job->stages;
+    job->create_info.pVertexInputState = &job->vertex_input;
+    job->create_info.pInputAssemblyState = &job->input_assembly;
+    job->create_info.pViewportState = &job->viewport_state;
+    job->create_info.pRasterizationState = &job->rasterizer;
+    job->create_info.pMultisampleState = &job->multisampling;
+    job->create_info.pDepthStencilState =
+        job->has_depth_stencil ? &job->depth_stencil : NULL;
+    job->create_info.pColorBlendState = &job->color_blending;
+    job->create_info.pDynamicState = &job->dynamic_state;
+}
+
+static void pipeline_compile_now(PGRAPHVkState *r, PipelineCompileJob *job)
+{
+    VkPipeline pipeline;
+
+    qemu_mutex_lock(&r->pipeline_cache_lock);
+    VkResult result = vkCreateGraphicsPipelines(
+        r->device, r->vk_pipeline_cache, 1, &job->create_info, NULL, &pipeline);
+    qemu_mutex_unlock(&r->pipeline_cache_lock);
+
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "vk: pipeline compile failed (%d)\n", result);
+        pipeline = VK_NULL_HANDLE;
+    }
+
+    job->binding->layout = job->create_info.layout;
+    job->binding->render_pass = job->create_info.renderPass;
+    qatomic_store_release(&job->binding->pipeline, pipeline);
+    qatomic_set(&job->binding->compile_pending, false);
+}
+
+static void *pipeline_compile_thread_fn(void *opaque)
+{
+    PGRAPHVkState *r = opaque;
+
+    qemu_mutex_lock(&r->pipeline_compile_lock);
+    while (r->pipeline_compile_running) {
+        if (QSIMPLEQ_EMPTY(&r->pipeline_compile_queue)) {
+            qemu_cond_wait(&r->pipeline_compile_cond, &r->pipeline_compile_lock);
+            continue;
+        }
+
+        PipelineCompileJob *job = QSIMPLEQ_FIRST(&r->pipeline_compile_queue);
+        QSIMPLEQ_REMOVE_HEAD(&r->pipeline_compile_queue, entry);
+        qemu_mutex_unlock(&r->pipeline_compile_lock);
+
+        pipeline_compile_now(r, job);
+        g_free(job);
+
+        qemu_mutex_lock(&r->pipeline_compile_lock);
+    }
+    qemu_mutex_unlock(&r->pipeline_compile_lock);
+
+    return NULL;
+}
+
+static void pipeline_compile_submit(PGRAPHVkState *r, PipelineCompileJob *job)
+{
+    qemu_mutex_lock(&r->pipeline_compile_lock);
+    QSIMPLEQ_INSERT_TAIL(&r->pipeline_compile_queue, job, entry);
+    qemu_cond_signal(&r->pipeline_compile_cond);
+    qemu_mutex_unlock(&r->pipeline_compile_lock);
+}
+
+static void init_pipeline_compile_thread(PGRAPHVkState *r)
+{
+    qemu_mutex_init(&r->pipeline_cache_lock);
+    qemu_mutex_init(&r->pipeline_compile_lock);
+    qemu_cond_init(&r->pipeline_compile_cond);
+    QSIMPLEQ_INIT(&r->pipeline_compile_queue);
+
+    if (!pgraph_vk_async_pipeline()) {
+        return;
+    }
+
+    r->pipeline_compile_running = true;
+    qemu_thread_create(&r->pipeline_compile_thread, "nv2a.pipeline_compile",
+                       pipeline_compile_thread_fn, r, QEMU_THREAD_JOINABLE);
+    r->pipeline_compile_started = true;
+}
+
+static void finalize_pipeline_compile_thread(PGRAPHVkState *r)
+{
+    if (r->pipeline_compile_started) {
+        qemu_mutex_lock(&r->pipeline_compile_lock);
+        r->pipeline_compile_running = false;
+        qemu_cond_signal(&r->pipeline_compile_cond);
+        qemu_mutex_unlock(&r->pipeline_compile_lock);
+        qemu_thread_join(&r->pipeline_compile_thread);
+        r->pipeline_compile_started = false;
+    }
+
+    while (!QSIMPLEQ_EMPTY(&r->pipeline_compile_queue)) {
+        PipelineCompileJob *job = QSIMPLEQ_FIRST(&r->pipeline_compile_queue);
+        QSIMPLEQ_REMOVE_HEAD(&r->pipeline_compile_queue, entry);
+        g_free(job);
+    }
+
+    qemu_cond_destroy(&r->pipeline_compile_cond);
+    qemu_mutex_destroy(&r->pipeline_compile_lock);
+    qemu_mutex_destroy(&r->pipeline_cache_lock);
+}
+
 static void init_pipeline_cache(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
@@ -207,7 +330,8 @@ static void init_pipeline_cache(PGRAPHState *pg)
 
     VkPipelineCacheCreateInfo cache_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
-        .flags = 0,
+        .flags = pgraph_vk_async_pipeline() ?
+                     VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT : 0,
         .initialDataSize = cache_size,
         .pInitialData = cache_size ? cache_data : NULL,
         .pNext = NULL,
@@ -302,6 +426,7 @@ void pgraph_vk_init_pipelines(PGRAPHState *pg)
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     init_pipeline_cache(pg);
+    init_pipeline_compile_thread(pg->vk_renderer_state);
     init_clear_shaders(pg);
     init_render_passes(r);
 
@@ -323,6 +448,7 @@ void pgraph_vk_finalize_pipelines(PGRAPHState *pg)
     PGRAPHVkState *r = pg->vk_renderer_state;
 
     finalize_clear_shaders(pg);
+    finalize_pipeline_compile_thread(pg->vk_renderer_state);
     finalize_pipeline_cache(pg);
     finalize_render_passes(r);
 
