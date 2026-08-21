@@ -232,8 +232,13 @@ void lru_visit_active(Lru *lru, LruNodeVisitorFunc visitor_func, void *opaque)
 {
 	LruNode *iter, *iter_next;
 
-	for (unsigned int bin = 0; bin < LRU_NUM_BINS; bin++) {
-		QTAILQ_FOREACH_SAFE(iter, &lru->bins[bin], next_bin, iter_next) {
+	/* The global list holds every node, free ones included, and bin membership
+	 * is what marks a node active - so walking it and testing that visits
+	 * exactly the same set. Walking the bins instead touches all LRU_NUM_BINS
+	 * heads, 65536 of them spanning a megabyte, however few nodes are live:
+	 * the texture cache holds 1024, and this runs per dirty texture bind. */
+	QTAILQ_FOREACH_SAFE(iter, &lru->global, next_global, iter_next) {
+		if (lru_is_node_in_use(lru, iter)) {
 			visitor_func(lru, iter, opaque);
 		}
 	}
