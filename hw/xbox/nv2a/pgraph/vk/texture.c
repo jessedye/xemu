@@ -1209,19 +1209,24 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
                  surface->color && surface != r->color_binding &&
                  vkf.vk_format == surface->host_fmt.vk_format;
 
-    /* The copy path's transitions doubled as the write-to-sample barrier;
-     * a direct alias of a surface drawn in this command buffer needs an
-     * explicit one. */
-    if (alias && r->in_command_buffer &&
+    /* Aliasing a surface drawn in this command buffer needs a write-to-sample
+     * barrier, and a barrier cannot be recorded inside a render pass, so it
+     * ends one. Halo 2 pays that 52 times a frame - 69% of its boundaries and
+     * 20.8 ms of GPU - while the copy path costs boundaries only when a pass
+     * happens to be open. The in_render_pass test is what makes the rest free:
+     * without it the fallback fires where nothing is open and costs GTA 4.6%.
+     *
+     * The copy path's own transitions double as the write-to-sample barrier,
+     * so falling back to it is correct by construction. */
+    if (alias && r->in_render_pass && r->in_command_buffer &&
         surface->draw_time >= r->command_buffer_start_time) {
-        VkCommandBuffer cmd = pgraph_vk_begin_nondraw_commands_for(
-            pg, NV2A_PROF_RPB_ND_ALIAS);
-        pgraph_vk_transition_image_layout(pg, cmd, surface->image,
-                                          surface->host_fmt.vk_format,
-                                          VK_IMAGE_LAYOUT_GENERAL,
-                                          VK_IMAGE_LAYOUT_GENERAL);
-        pgraph_vk_end_nondraw_commands(pg, cmd);
+        nv2a_profile_inc_counter(NV2A_PROF_ALIAS_DOWNGRADE);
+        alias = false;
     }
+
+    /* Record the decision in the key: an aliased and a copied binding are
+     * different objects and must not collide on one cache entry. */
+    key.aliased = alias ? 1 : 0;
 
     uint64_t key_hash = fast_hash((void*)&key, sizeof(key));
     LruNode *node = lru_lookup(&r->texture_cache, key_hash, &key);

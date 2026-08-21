@@ -207,6 +207,12 @@ typedef struct TextureKey {
     uint32_t address;
     uint32_t border_color;
     uint32_t max_anisotropy;
+    /* An aliased binding views the surface's own image; a copied one owns a
+     * separate image. They are not interchangeable, so they must not share a
+     * cache entry - otherwise a decision that varies between frames releases
+     * and recreates the same node every frame, including images a pending
+     * submission still references. */
+    uint32_t aliased;
 } TextureKey;
 
 typedef struct TextureBinding {

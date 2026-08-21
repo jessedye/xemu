@@ -64,7 +64,7 @@ static const struct {
     { NV2A_PROF_RPB_NONDRAW,          "rpb_nondraw" },
     { NV2A_PROF_RPB_FB_DIRTY,         "rpb_fb_dirty" },
     { NV2A_PROF_RPB_ND_COPY,          "rpb_nd_copy" },
-    { NV2A_PROF_RPB_ND_ALIAS,         "rpb_nd_alias" },
+    { NV2A_PROF_ALIAS_DOWNGRADE,      "alias_downgrade" },
     { NV2A_PROF_INLINE_ELEMENTS,     "inline_elements" },
     { NV2A_PROF_INLINE_BUFFERS,      "inline_buffers" },
     { NV2A_PROF_INLINE_ARRAYS,       "inline_arrays" },
