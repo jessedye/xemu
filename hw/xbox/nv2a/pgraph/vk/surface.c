@@ -734,25 +734,6 @@ static bool check_surfaces_overlap(const SurfaceBinding *surface,
                                         other_surface->size);
 }
 
-/* Writing an evicted surface back costs a full GPU drain, and Halo 2 pays
- * three a frame - 36 ms of an 84 ms frame - cycling four bloom buffers
- * through shared VRAM. When the incoming surface covers the evicted one
- * entirely, every byte written back is about to be overwritten, so the
- * writeback is only observable if the guest reads that memory in between.
- * Opt-in until that has been soaked: correctness here is a stale or missing
- * render target, which is visible but only in scenes that reach it. */
-static bool pgraph_vk_skip_covered_writeback(void)
-{
-    static int cached = -1;
-    if (cached < 0) {
-        cached = pgraph_vk_env_opt_in("XEMU_SKIP_COVERED_WRITEBACK");
-        if (cached) {
-            fprintf(stderr, "vk: covered surface evictions skip the writeback\n");
-        }
-    }
-    return cached == 1;
-}
-
 static void invalidate_overlapping_surfaces(NV2AState *d,
                                             SurfaceBinding const *surface)
 {
@@ -764,23 +745,7 @@ static void invalidate_overlapping_surfaces(NV2AState *d,
             trace_nv2a_pgraph_surface_evict_overlapping(
                 other_surface->vram_addr, other_surface->width,
                 other_surface->height, other_surface->pitch);
-
-            bool covered =
-                other_surface->vram_addr >= surface->vram_addr &&
-                (other_surface->vram_addr + other_surface->size) <=
-                    (surface->vram_addr + surface->size);
-            if (other_surface->draw_dirty) {
-                nv2a_profile_inc_counter(covered ? NV2A_PROF_EVICT_COVERED :
-                                                   NV2A_PROF_EVICT_PARTIAL);
-            }
-
-            if (covered && other_surface->draw_dirty &&
-                pgraph_vk_skip_covered_writeback()) {
-                nv2a_profile_inc_counter(NV2A_PROF_EVICT_WB_SKIPPED);
-                other_surface->draw_dirty = false;
-            } else {
-                pgraph_vk_surface_download_if_dirty(d, other_surface);
-            }
+            pgraph_vk_surface_download_if_dirty(d, other_surface);
             invalidate_surface(d, other_surface);
         }
     }
