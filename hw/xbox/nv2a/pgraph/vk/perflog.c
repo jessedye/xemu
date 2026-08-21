@@ -68,6 +68,8 @@ static const struct {
     { NV2A_PROF_S2T_REJECT_DIM,       "s2t_rej_dim" },
     { NV2A_PROF_S2T_REJECT_LEVELS,    "s2t_rej_levels" },
     { NV2A_PROF_S2T_REJECT_FORMAT,    "s2t_rej_format" },
+    { NV2A_PROF_DL_BASE_MATCH,        "dl_base_match" },
+    { NV2A_PROF_DL_OFFSET,            "dl_offset" },
     { NV2A_PROF_INLINE_ELEMENTS,     "inline_elements" },
     { NV2A_PROF_INLINE_BUFFERS,      "inline_buffers" },
     { NV2A_PROF_INLINE_ARRAYS,       "inline_arrays" },
