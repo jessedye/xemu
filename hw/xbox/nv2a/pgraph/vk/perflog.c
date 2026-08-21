@@ -29,6 +29,8 @@ static const struct {
 } k_counters[] = {
     { NV2A_PROF_SHADER_GEN,          "shader_gen" },
     { NV2A_PROF_PIPELINE_GEN,        "pipeline_gen" },
+    { NV2A_PROF_PIPELINE_ASYNC,       "pipeline_async" },
+    { NV2A_PROF_PIPELINE_SKIP,        "pipeline_skip" },
     { NV2A_PROF_QUEUE_SUBMIT,        "queue_submit" },
     /* Auxiliary submissions, each a separate GPU round trip on top of the
      * frame's own submit. Broken out so it is clear which of them is worth

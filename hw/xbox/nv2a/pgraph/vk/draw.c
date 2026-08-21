@@ -312,6 +312,12 @@ static void finalize_pipeline_compile_thread(PGRAPHVkState *r)
     qemu_mutex_destroy(&r->pipeline_cache_lock);
 }
 
+static bool pipeline_not_ready(PGRAPHVkState *r)
+{
+    return r->pipeline_binding &&
+           qatomic_read(&r->pipeline_binding->compile_pending);
+}
+
 static void init_pipeline_cache(PGRAPHState *pg)
 {
     PGRAPHVkState *r = pg->vk_renderer_state;
@@ -957,6 +963,13 @@ static void create_pipeline(PGRAPHState *pg)
         return;
     }
 
+    if (qatomic_read(&snode->compile_pending)) {
+        r->pipeline_binding_changed = r->pipeline_binding != snode;
+        r->pipeline_binding = snode;
+        NV2A_VK_DGROUP_END();
+        return;
+    }
+
     NV2A_VK_DPRINTF("Cache miss");
     nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_GEN);
 
@@ -1235,14 +1248,44 @@ static void create_pipeline(PGRAPHState *pg)
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
     };
-    VkPipeline pipeline;
-    VK_CHECK(vkCreateGraphicsPipelines(r->device, r->vk_pipeline_cache, 1,
-                                       &pipeline_create_info, NULL, &pipeline));
-
-    snode->pipeline = pipeline;
     snode->layout = layout;
     snode->render_pass = pipeline_create_info.renderPass;
     snode->draw_time = pg->draw_time;
+
+    if (pgraph_vk_async_pipeline() && !pg->zpass_pixel_count_enable) {
+        PipelineCompileJob *job = g_new0(PipelineCompileJob, 1);
+
+        job->binding = snode;
+        job->create_info = pipeline_create_info;
+        memcpy(job->stages, shader_stages, sizeof(job->stages));
+        job->vertex_input = vertex_input;
+        memcpy(job->bindings, r->vertex_binding_descriptions,
+               sizeof(job->bindings));
+        memcpy(job->attributes, r->vertex_attribute_descriptions,
+               sizeof(job->attributes));
+        job->input_assembly = input_assembly;
+        job->viewport_state = viewport_state;
+        job->rasterizer = rasterizer;
+        job->multisampling = multisampling;
+        job->depth_stencil = depth_stencil;
+        job->blend_attachment = color_blend_attachment;
+        job->color_blending = color_blending;
+        memcpy(job->dynamic_states, dynamic_states, sizeof(job->dynamic_states));
+        job->dynamic_state = dynamic_state;
+        job->has_depth_stencil = r->zeta_binding != NULL;
+        pipeline_job_relink(job);
+
+        snode->pipeline = VK_NULL_HANDLE;
+        qatomic_set(&snode->compile_pending, true);
+        nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_ASYNC);
+        pipeline_compile_submit(r, job);
+    } else {
+        VkPipeline pipeline;
+        VK_CHECK(vkCreateGraphicsPipelines(r->device, r->vk_pipeline_cache, 1,
+                                           &pipeline_create_info, NULL,
+                                           &pipeline));
+        snode->pipeline = pipeline;
+    }
 
     r->pipeline_binding = snode;
     r->pipeline_binding_changed = true;
@@ -2538,6 +2581,12 @@ void pgraph_vk_flush_draw(NV2AState *d)
         VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element);
 
         begin_pre_draw(pg);
+        if (pipeline_not_ready(r)) {
+            nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
+            NV2A_VK_DGROUP_END();
+            return;
+        }
+
         copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
                                      "Draw Arrays");
@@ -2578,6 +2627,12 @@ void pgraph_vk_flush_draw(NV2AState *d)
         VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element + 1);
 
         begin_pre_draw(pg);
+        if (pipeline_not_ready(r)) {
+            nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
+            NV2A_VK_DGROUP_END();
+            return;
+        }
+
         copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element + 1);
         VkDeviceSize buffer_offset = pgraph_vk_update_index_buffer(
             pg, pg->inline_elements, index_data_size);
@@ -2620,6 +2675,12 @@ void pgraph_vk_flush_draw(NV2AState *d)
         ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING, offset);
 
         begin_pre_draw(pg);
+        if (pipeline_not_ready(r)) {
+            nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
+            NV2A_VK_DGROUP_END();
+            return;
+        }
+
         VkDeviceSize buffer_offset = pgraph_vk_update_vertex_inline_buffer(
             pg, data, sizes, r->num_active_vertex_attribute_descriptions);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
@@ -2663,6 +2724,12 @@ void pgraph_vk_flush_draw(NV2AState *d)
                                          vertex_size, index_count - 1);
 
         begin_pre_draw(pg);
+        if (pipeline_not_ready(r)) {
+            nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
+            NV2A_VK_DGROUP_END();
+            return;
+        }
+
         void *inline_array_data = pg->inline_array;
         VkDeviceSize buffer_offset = pgraph_vk_update_vertex_inline_buffer(
             pg, &inline_array_data, &inline_array_data_size, 1);
