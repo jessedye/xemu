@@ -274,6 +274,17 @@ static void *pipeline_compile_thread_fn(void *opaque)
 }
 
 #define PIPELINE_COMPILE_MAX_INFLIGHT 64
+#define PIPELINE_COMPILE_MAX_SKIPS 3
+
+static void pipeline_compile_wait(PGRAPHVkState *r, PipelineBinding *binding)
+{
+    while (qatomic_read(&binding->compile_pending)) {
+        qemu_mutex_lock(&r->pipeline_compile_lock);
+        qemu_cond_broadcast(&r->pipeline_compile_cond);
+        qemu_mutex_unlock(&r->pipeline_compile_lock);
+        g_usleep(200);
+    }
+}
 
 static bool pipeline_compile_has_capacity(PGRAPHVkState *r)
 {
@@ -982,10 +993,14 @@ static void create_pipeline(PGRAPHState *pg)
     }
 
     if (qatomic_read(&snode->compile_pending)) {
-        r->pipeline_binding_changed = r->pipeline_binding != snode;
-        r->pipeline_binding = snode;
-        NV2A_VK_DGROUP_END();
-        return;
+        if (snode->compile_skips < PIPELINE_COMPILE_MAX_SKIPS) {
+            snode->compile_skips++;
+            r->pipeline_binding_changed = r->pipeline_binding != snode;
+            r->pipeline_binding = snode;
+            NV2A_VK_DGROUP_END();
+            return;
+        }
+        pipeline_compile_wait(r, snode);
     }
 
     NV2A_VK_DPRINTF("Cache miss");
@@ -1295,6 +1310,7 @@ static void create_pipeline(PGRAPHState *pg)
         pipeline_job_relink(job);
 
         snode->pipeline = VK_NULL_HANDLE;
+        snode->compile_skips = 0;
         qatomic_set(&snode->compile_pending, true);
         nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_ASYNC);
         pipeline_compile_submit(r, job);
