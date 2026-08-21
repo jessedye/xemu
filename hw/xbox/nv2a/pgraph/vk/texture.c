@@ -933,14 +933,23 @@ static unsigned int vk_format_texel_size(VkFormat format)
     }
 }
 
+/* Rejecting a surface here sends the caller down
+ * pgraph_vk_download_surfaces_in_range_if_dirty, which reads the surface back
+ * through a full GPU drain. Halo 2 pays three of those a frame - 36 ms of an
+ * 84 ms frame, its single largest cost - so which of these five conditions
+ * rejects it decides whether anything can be done about it. */
 static bool check_surface_to_texture_compatiblity(const SurfaceBinding *surface,
                                                   const TextureShape *shape)
 {
     if ((!surface->swizzle && surface->pitch != shape->pitch) ||
         surface->width != shape->width ||
-        surface->height != shape->height ||
-        shape->cubemap ||
-        shape->levels > 1) {
+        surface->height != shape->height) {
+        nv2a_profile_inc_counter(NV2A_PROF_S2T_REJECT_DIM);
+        return false;
+    }
+
+    if (shape->cubemap || shape->levels > 1) {
+        nv2a_profile_inc_counter(NV2A_PROF_S2T_REJECT_LEVELS);
         return false;
     }
 
@@ -949,8 +958,13 @@ static bool check_surface_to_texture_compatiblity(const SurfaceBinding *surface,
     }
 
     VkColorFormatInfo tex_vkf = kelvin_color_format_vk_map[shape->color_format];
-    return tex_vkf.vk_format &&
-           surface->host_fmt.host_bytes_per_pixel == vk_format_texel_size(tex_vkf.vk_format);
+    bool ok = tex_vkf.vk_format &&
+              surface->host_fmt.host_bytes_per_pixel ==
+                  vk_format_texel_size(tex_vkf.vk_format);
+    if (!ok) {
+        nv2a_profile_inc_counter(NV2A_PROF_S2T_REJECT_FORMAT);
+    }
+    return ok;
 }
 
 static void create_dummy_texture(PGRAPHState *pg)
