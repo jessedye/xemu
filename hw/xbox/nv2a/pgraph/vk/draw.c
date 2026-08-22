@@ -342,7 +342,8 @@ static void finalize_pipeline_compile_thread(PGRAPHVkState *r)
 
 static bool pipeline_not_ready(PGRAPHVkState *r)
 {
-    return r->pipeline_compile_deferred;
+    return r->pipeline_binding &&
+           qatomic_read(&r->pipeline_binding->compile_pending);
 }
 
 static void init_pipeline_cache(PGRAPHState *pg)
@@ -965,8 +966,6 @@ static void create_pipeline(PGRAPHState *pg)
     NV2AState *d = container_of(pg, NV2AState, pgraph);
     PGRAPHVkState *r = pg->vk_renderer_state;
 
-    r->pipeline_compile_deferred = false;
-
     pgraph_vk_bind_textures(d);
     pgraph_vk_bind_shaders(pg);
 
@@ -999,12 +998,9 @@ static void create_pipeline(PGRAPHState *pg)
 
     if (qatomic_read(&snode->compile_pending)) {
         if (snode->compile_skips < PIPELINE_COMPILE_MAX_SKIPS) {
-            /* Leave the current binding in place. Installing one whose pipeline
-             * does not exist yet aims push constants and descriptor writes at
-             * its layout while the command buffer still has the previous
-             * pipeline bound, and the two disagree about the layout. */
             snode->compile_skips++;
-            r->pipeline_compile_deferred = true;
+            r->pipeline_binding_changed = r->pipeline_binding != snode;
+            r->pipeline_binding = snode;
             NV2A_VK_DGROUP_END();
             return;
         }
