@@ -115,6 +115,8 @@
     _X(NV2A_PROF_QUEUE_SUBMIT_AUX) \
     _X(NV2A_PROF_PIPELINE_NOTDIRTY) \
     _X(NV2A_PROF_PIPELINE_GEN) \
+    _X(NV2A_PROF_REMAP_VTX_COPIED) \
+    _X(NV2A_PROF_REMAP_VTX_USED) \
     _X(NV2A_PROF_PIPELINE_BIND) \
     _X(NV2A_PROF_PIPELINE_RENDERPASSES) \
     _X(NV2A_PROF_BEGIN_ENDS) \
@@ -181,6 +183,12 @@ void nv2a_profile_flip_stall(void);
 static inline void nv2a_profile_inc_counter(enum NV2A_PROF_COUNTERS_ENUM cnt)
 {
     g_nv2a_stats.frame_working.counters[cnt] += 1;
+}
+
+static inline void nv2a_profile_inc_counter_by(enum NV2A_PROF_COUNTERS_ENUM cnt,
+                                               unsigned int n)
+{
+    g_nv2a_stats.frame_working.counters[cnt] += n;
 }
 
 #ifdef CONFIG_RENDERDOC

@@ -2444,6 +2444,10 @@ void pgraph_vk_flush_draw(NV2AState *d)
         sync_vertex_ram_buffer(pg);
         VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element);
 
+        nv2a_profile_inc_counter_by(NV2A_PROF_REMAP_VTX_COPIED, max_element);
+        nv2a_profile_inc_counter_by(NV2A_PROF_REMAP_VTX_USED,
+                                    max_element - min_element);
+
         begin_pre_draw(pg);
         copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
@@ -2483,6 +2487,10 @@ void pgraph_vk_flush_draw(NV2AState *d)
             pg->inline_elements[pg->inline_elements_length - 1]);
         sync_vertex_ram_buffer(pg);
         VertexBufferRemap remap = remap_unaligned_attributes(pg, max_element + 1);
+
+        nv2a_profile_inc_counter_by(NV2A_PROF_REMAP_VTX_COPIED, max_element + 1);
+        nv2a_profile_inc_counter_by(NV2A_PROF_REMAP_VTX_USED,
+                                    max_element + 1 - min_element);
 
         begin_pre_draw(pg);
         copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element + 1);
