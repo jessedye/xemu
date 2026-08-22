@@ -1196,47 +1196,11 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
  * access: the virtual CPU will exit the current TB if code is modified inside
  * this TB.
  */
-
-/* Row 108 left the invalidation churn unexplained: Halo 2 invalidates 28174
- * blocks against 34226 that exist, and every invalidation unpatches the direct
- * jumps into it, forcing the lookup helper that costs 9.3% of the saturated
- * thread. Attribute it: a non-NULL cpu is the guest writing its own code
- * pages, NULL is a device or DMA write from another thread. */
-static uint64_t xi_cpu, xi_dev, xi_fast, xi_next = 1;
-static uint64_t xi_bucket[16];
-
-static void xi_note(CPUState *cpu, tb_page_addr_t start, bool fast)
-{
-    if (fast) {
-        qatomic_inc(&xi_fast);
-    } else if (cpu) {
-        qatomic_inc(&xi_cpu);
-    } else {
-        qatomic_inc(&xi_dev);
-    }
-    xi_bucket[(start >> 20) & 15]++;
-
-    uint64_t n = xi_cpu + xi_dev + xi_fast;
-    if (n == xi_next) {
-        xi_next *= 10;
-        fprintf(stderr, "xtrace: tbinval n=%llu cpu=%llu dev=%llu fast=%llu"
-                " buckets=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
-                (unsigned long long)n, (unsigned long long)xi_cpu,
-                (unsigned long long)xi_dev, (unsigned long long)xi_fast,
-                (unsigned long long)xi_bucket[0], (unsigned long long)xi_bucket[1],
-                (unsigned long long)xi_bucket[2], (unsigned long long)xi_bucket[3],
-                (unsigned long long)xi_bucket[4], (unsigned long long)xi_bucket[5],
-                (unsigned long long)xi_bucket[6], (unsigned long long)xi_bucket[7]);
-    }
-}
-
 void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
                               tb_page_addr_t last)
 {
     struct page_collection *pages;
     tb_page_addr_t index, index_last;
-
-    xi_note(cpu, start, false);
 
     pages = page_collection_lock(start, last);
 
@@ -1270,7 +1234,6 @@ void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
 
     if (p) {
         ram_addr_t last = start + len - 1;
-        xi_note(cpu, start, true);
         struct page_collection *pages = page_collection_lock(start, last);
 
         tb_invalidate_phys_page_range__locked(cpu, pages, p,
