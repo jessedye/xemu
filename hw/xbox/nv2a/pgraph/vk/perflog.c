@@ -43,6 +43,8 @@ static const struct {
     { NV2A_PROF_QUEUE_SUBMIT_5,      "submit_display" },
     { NV2A_PROF_DRAW_ARRAYS,         "draw_arrays" },
     { NV2A_PROF_BEGIN_ENDS,          "begin_ends" },
+    { NV2A_PROF_SHADER_UBO_DIRTY,    "ubo_dirty" },
+    { NV2A_PROF_SHADER_UBO_NOTDIRTY, "ubo_notdirty" },
     { NV2A_PROF_TEX_UPLOAD,          "tex_upload" },
     { NV2A_PROF_FINISH_SURFACE_DOWN, "fin_surface_down" },
     { NV2A_PROF_FINISH_FLIP_STALL,   "fin_flip_stall" },
