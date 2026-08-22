@@ -1150,6 +1150,12 @@ static long voice_resample_callback(void *cb_data, float **data)
         sample_count = NUM_SAMPLES_PER_FRAME;
     }
 
+    if (filter->resampler_channels == 1) {
+        for (int i = 1; i < sample_count; i++) {
+            filter->resample_buf[i] = filter->resample_buf[2 * i];
+        }
+    }
+
     *data = filter->resample_buf;
     return sample_count;
 }
@@ -1160,8 +1166,18 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
     assert(v < MCPX_HW_MAX_VOICES);
     MCPXAPUVoiceFilter *filter = &d->vp.filters[v];
 
+    bool stereo = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
+                                 NV_PAVS_VOICE_CFG_FMT_STEREO);
+    int channels = stereo ? 2 : 1;
+
+    if (filter->resampler && filter->resampler_channels != channels) {
+        src_delete(filter->resampler);
+        filter->resampler = NULL;
+    }
+
     if (filter->resampler == NULL) {
         filter->voice = v;
+        filter->resampler_channels = channels;
         int err;
 
         /* Note: Using a sinc based resampler for quality. Unsure about
@@ -1169,9 +1185,9 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
          * which case using this resampler is overkill, but quality is good
          * so use it for now.
          */
-        // FIXME: Don't do 2ch resampling if this is a mono voice
         filter->resampler = src_callback_new(&voice_resample_callback,
-                                           SRC_SINC_FASTEST, 2, &err, filter);
+                                           SRC_SINC_FASTEST, channels, &err,
+                                           filter);
         if (filter->resampler == NULL) {
             fprintf(stderr, "src error: %s\n", src_strerror(err));
             assert(0);
@@ -1205,6 +1221,14 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
 
         if (count == 0)
             return -1;
+    }
+
+    if (channels == 1) {
+        for (int i = count - 1; i >= 0; i--) {
+            float s = ((float *)samples)[i];
+            samples[i][0] = s;
+            samples[i][1] = s;
+        }
     }
 
     return count;
