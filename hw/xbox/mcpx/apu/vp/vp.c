@@ -1178,6 +1178,23 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
         }
     }
 
+    {
+        static uint64_t rs_n, rs_unity, rs_mono, rs_next = 1;
+        rs_n++;
+        if (rate == 1.0f) {
+            rs_unity++;
+        }
+        if (!voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
+                            NV_PAVS_VOICE_CFG_FMT_STEREO)) {
+            rs_mono++;
+        }
+        if (rs_n == rs_next) {
+            rs_next *= 10;
+            fprintf(stderr, "xtrace: resample count=%lu unity=%lu mono=%lu\n",
+                    rs_n, rs_unity, rs_mono);
+        }
+    }
+
     int count = src_callback_read(filter->resampler, rate, requested_num,
                                   (float *)samples);
     if (count == -1) {
