@@ -1168,7 +1168,12 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
 
     bool stereo = voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
                                  NV_PAVS_VOICE_CFG_FMT_STEREO);
-    int channels = stereo ? 2 : 1;
+    static int mono_opt = -1;
+    if (mono_opt < 0) {
+        const char *opt = getenv("XEMU_APU_MONO_RESAMPLE");
+        mono_opt = (opt == NULL || strcmp(opt, "0") != 0);
+    }
+    int channels = (stereo || !mono_opt) ? 2 : 1;
 
     if (filter->resampler && filter->resampler_channels != channels) {
         src_delete(filter->resampler);
@@ -1194,23 +1199,6 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
         }
     }
 
-    {
-        static uint64_t rs_n, rs_unity, rs_mono, rs_next = 1;
-        rs_n++;
-        if (rate == 1.0f) {
-            rs_unity++;
-        }
-        if (!voice_get_mask(d, v, NV_PAVS_VOICE_CFG_FMT,
-                            NV_PAVS_VOICE_CFG_FMT_STEREO)) {
-            rs_mono++;
-        }
-        if (rs_n == rs_next) {
-            rs_next *= 10;
-            fprintf(stderr, "xtrace: resample count=%lu unity=%lu mono=%lu\n",
-                    rs_n, rs_unity, rs_mono);
-        }
-    }
-
     int count = src_callback_read(filter->resampler, rate, requested_num,
                                   (float *)samples);
     if (count == -1) {
@@ -1228,6 +1216,21 @@ static int voice_resample(MCPXAPUState *d, uint16_t v, float samples[][2],
             float s = ((float *)samples)[i];
             samples[i][0] = s;
             samples[i][1] = s;
+        }
+    }
+
+    {
+        static uint64_t ck = 1469598103934665603ULL, n, next = 1;
+        for (int i = 0; i < count * 2; i++) {
+            uint32_t bits;
+            memcpy(&bits, &((float *)samples)[i], sizeof(bits));
+            ck = (ck ^ bits) * 1099511628211ULL;
+        }
+        n++;
+        if (n == next) {
+            next *= 10;
+            fprintf(stderr, "xtrace: resample calls=%lu mono=%d ck=%016lx\n",
+                    n, mono_opt, ck);
         }
     }
 
