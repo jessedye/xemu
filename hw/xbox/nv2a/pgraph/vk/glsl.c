@@ -166,9 +166,9 @@ void pgraph_vk_finalize_glsl_compiler(void)
 static uint64_t spirv_cache_key(glslang_stage_t stage, const char *glsl_source)
 {
     g_autofree char *material =
-        g_strdup_printf("%s|%d|%d|%s", xemu_version, (int)stage,
+        g_strdup_printf("%s|%d|%d|%d|%s", xemu_version, (int)stage,
                         g_config.display.vulkan.debug_shaders ? 1 : 0,
-                        glsl_source);
+                        (int)g_target_spv, glsl_source);
     return fast_hash((const uint8_t *)material, strlen(material));
 }
 
