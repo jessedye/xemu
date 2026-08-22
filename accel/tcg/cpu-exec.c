@@ -246,6 +246,24 @@ TranslationBlock *inv_tb_htable_lookup(CPUState *cpu, TCGTBCPUState s)
  *
  * Returns: an existing translation block or NULL.
  */
+/* Rows 77 and 108 measured hash chain length and direct-jump patching, but
+ * never the jump cache hit rate. A miss here returns to cpu_exec_loop through
+ * the epilogue, which is what the loop re-entry rate is actually made of. */
+static void xl_note(int kind)
+{
+    static uint64_t xl[3], xl_next = 1;
+    uint64_t n;
+
+    xl[kind]++;
+    n = xl[0] + xl[1] + xl[2];
+    if (n == xl_next) {
+        xl_next *= 10;
+        fprintf(stderr, "xtrace: tblookup n=%llu jc_hit=%llu ht_hit=%llu miss=%llu\n",
+                (unsigned long long)n, (unsigned long long)xl[0],
+                (unsigned long long)xl[1], (unsigned long long)xl[2]);
+    }
+}
+
 static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
 {
     TranslationBlock *tb;
@@ -264,13 +282,16 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
                tb->cs_base == s.cs_base &&
                tb->flags == s.flags &&
                tb_cflags(tb) == s.cflags)) {
+        xl_note(0);
         goto hit;
     }
 
     tb = tb_htable_lookup(cpu, s);
     if (tb == NULL) {
+        xl_note(2);
         return NULL;
     }
+    xl_note(1);
 
     jc->array[hash].pc = s.pc;
     qatomic_set(&jc->array[hash].tb, tb);
