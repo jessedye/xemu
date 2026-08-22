@@ -55,7 +55,7 @@ typedef struct PresentState {
     bool init_result;
 
     VkSemaphore image_available;
-    VkSemaphore render_finished;
+    VkSemaphore *render_finished;
     VkFence in_flight;
     VkCommandPool command_pool;
     VkCommandBuffer command_buffer;
@@ -121,6 +121,16 @@ static void destroy_swapchain(PGRAPHVkState *r)
     if (g_present.swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(r->device, g_present.swapchain, NULL);
         g_present.swapchain = VK_NULL_HANDLE;
+    }
+    if (g_present.render_finished) {
+        for (uint32_t i = 0; i < g_present.num_images; i++) {
+            if (g_present.render_finished[i]) {
+                vkDestroySemaphore(r->device, g_present.render_finished[i],
+                                   NULL);
+            }
+        }
+        g_free(g_present.render_finished);
+        g_present.render_finished = NULL;
     }
     g_free(g_present.images);
     g_present.images = NULL;
@@ -203,9 +213,8 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
         .imageColorSpace = chosen.colorSpace,
         .imageExtent = extent,
         .imageArrayLayers = 1,
-        /* Transfer destination rather than colour attachment: the composited
-         * image is blitted in, not rendered to. */
-        .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = caps.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -223,6 +232,19 @@ static bool create_swapchain(PGRAPHVkState *r, uint32_t width, uint32_t height)
     g_present.images = g_malloc_n(g_present.num_images, sizeof(VkImage));
     vkGetSwapchainImagesKHR(r->device, g_present.swapchain,
                             &g_present.num_images, g_present.images);
+
+    /* Present waits on this for a specific image, and that image is not
+     * reacquired until it comes back round, so one semaphore shared by every
+     * image can be signalled again while a present still has it. */
+    VkSemaphoreCreateInfo sc_sem_info = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+    g_present.render_finished = g_malloc0_n(g_present.num_images,
+                                            sizeof(VkSemaphore));
+    for (uint32_t i = 0; i < g_present.num_images; i++) {
+        VK_CHECK(vkCreateSemaphore(r->device, &sc_sem_info, NULL,
+                                   &g_present.render_finished[i]));
+    }
 
     g_present.format = chosen.format;
     g_present.extent = extent;
@@ -282,8 +304,6 @@ static bool present_init(PGRAPHState *pg, void *window,
     };
     VK_CHECK(vkCreateSemaphore(r->device, &sem_info, NULL,
                                &g_present.image_available));
-    VK_CHECK(vkCreateSemaphore(r->device, &sem_info, NULL,
-                               &g_present.render_finished));
     VK_CHECK(vkCreateFence(r->device, &fence_info, NULL, &g_present.in_flight));
 
     VkCommandPoolCreateInfo pool_info = {
@@ -387,7 +407,6 @@ void pgraph_vk_present_finalize(PGRAPHState *pg)
 
     vkDestroyCommandPool(r->device, g_present.command_pool, NULL);
     vkDestroyFence(r->device, g_present.in_flight, NULL);
-    vkDestroySemaphore(r->device, g_present.render_finished, NULL);
     vkDestroySemaphore(r->device, g_present.image_available, NULL);
     destroy_swapchain(r);
     if (g_present.render_pass != VK_NULL_HANDLE) {
@@ -562,7 +581,7 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
         .commandBufferCount = 1,
         .pCommandBuffers = &g_present.command_buffer,
         .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &g_present.render_finished,
+        .pSignalSemaphores = &g_present.render_finished[index],
     };
     VK_CHECK(vkQueueSubmit(r->queue, 1, &submit_info, g_present.in_flight));
 
@@ -579,7 +598,7 @@ bool pgraph_vk_present_frame(PGRAPHState *pg)
     VkPresentInfoKHR present_info = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &g_present.render_finished,
+        .pWaitSemaphores = &g_present.render_finished[index],
         .swapchainCount = 1,
         .pSwapchains = &g_present.swapchain,
         .pImageIndices = &index,
