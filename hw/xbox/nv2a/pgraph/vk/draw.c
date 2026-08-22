@@ -2658,18 +2658,14 @@ void pgraph_vk_flush_draw(NV2AState *d)
                                     max_element - min_element);
 
         begin_pre_draw(pg);
-<<<<<<< HEAD
-        copy_remapped_attributes_to_inline_buffer(pg, remap, min_element,
-                                                  max_element);
-=======
         if (pipeline_not_ready(r)) {
             nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
             NV2A_VK_DGROUP_END();
             return;
         }
 
-        copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element);
->>>>>>> 2675591d4a (nv2a/vk: compile pipelines on the worker and skip the draw until ready)
+        copy_remapped_attributes_to_inline_buffer(pg, remap, min_element,
+                                                  max_element);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
                                      "Draw Arrays");
         begin_draw(pg);
@@ -2713,18 +2709,14 @@ void pgraph_vk_flush_draw(NV2AState *d)
                                     max_element + 1 - min_element);
 
         begin_pre_draw(pg);
-<<<<<<< HEAD
-        copy_remapped_attributes_to_inline_buffer(pg, remap, min_element,
-                                                  max_element + 1);
-=======
         if (pipeline_not_ready(r)) {
             nv2a_profile_inc_counter(NV2A_PROF_PIPELINE_SKIP);
             NV2A_VK_DGROUP_END();
             return;
         }
 
-        copy_remapped_attributes_to_inline_buffer(pg, remap, 0, max_element + 1);
->>>>>>> 2675591d4a (nv2a/vk: compile pipelines on the worker and skip the draw until ready)
+        copy_remapped_attributes_to_inline_buffer(pg, remap, min_element,
+                                                  max_element + 1);
         VkDeviceSize buffer_offset = pgraph_vk_update_index_buffer(
             pg, pg->inline_elements, index_data_size);
         pgraph_vk_begin_debug_marker(r, r->command_buffer, RGBA_BLUE,
