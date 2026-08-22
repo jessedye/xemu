@@ -15,6 +15,7 @@
  */
 
 #include "qemu/osdep.h"
+#include <dirent.h>
 #include "qemu/timer.h"
 #include "renderer.h"
 #include "hw/xbox/nv2a/debug.h"
@@ -93,6 +94,112 @@ static const struct {
 
 /* Board sensors, read once per window rather than per frame. Missing files are
  * skipped, so this stays harmless on hardware that does not expose them. */
+/* Per-thread CPU over the window. A saturated single thread and a merely busy
+ * process look identical in total CPU, and only the first of them caps the
+ * frame rate, so record the busiest thread alongside the sum. Both are
+ * percentages of one core. */
+typedef struct ThreadTicks {
+    long tid;
+    unsigned long long ticks;
+} ThreadTicks;
+
+#define PERFLOG_MAX_THREADS 96
+
+static ThreadTicks g_prev_threads[PERFLOG_MAX_THREADS];
+static unsigned g_prev_thread_count;
+
+static unsigned sample_thread_ticks(ThreadTicks *out, unsigned max)
+{
+    DIR *d = opendir("/proc/self/task");
+    unsigned n = 0;
+
+    if (!d) {
+        return 0;
+    }
+
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && n < max) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') {
+            continue;
+        }
+
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/self/task/%s/stat", e->d_name);
+
+        FILE *f = fopen(path, "r");
+        if (!f) {
+            continue;
+        }
+
+        char buf[512];
+        size_t len = fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        buf[len] = 0;
+
+        char *close = strrchr(buf, ')');
+        if (!close) {
+            continue;
+        }
+
+        unsigned long long utime = 0, stime = 0;
+        int field = 0;
+        for (char *tok = strtok(close + 2, " "); tok; tok = strtok(NULL, " ")) {
+            field++;
+            if (field == 12) {
+                utime = strtoull(tok, NULL, 10);
+            } else if (field == 13) {
+                stime = strtoull(tok, NULL, 10);
+                break;
+            }
+        }
+
+        out[n].tid = atol(e->d_name);
+        out[n].ticks = utime + stime;
+        n++;
+    }
+    closedir(d);
+    return n;
+}
+
+static void thread_cpu_percent(double elapsed_s, double *hot, double *all)
+{
+    ThreadTicks cur[PERFLOG_MAX_THREADS];
+    unsigned n = sample_thread_ticks(cur, PERFLOG_MAX_THREADS);
+    long hz = sysconf(_SC_CLK_TCK);
+
+    *hot = -1.0;
+    *all = -1.0;
+
+    if (n && g_prev_thread_count && hz > 0 && elapsed_s > 0.0) {
+        unsigned long long best = 0, total = 0;
+
+        for (unsigned i = 0; i < n; i++) {
+            for (unsigned j = 0; j < g_prev_thread_count; j++) {
+                if (g_prev_threads[j].tid != cur[i].tid) {
+                    continue;
+                }
+                if (cur[i].ticks < g_prev_threads[j].ticks) {
+                    break;
+                }
+
+                unsigned long long delta = cur[i].ticks - g_prev_threads[j].ticks;
+
+                total += delta;
+                if (delta > best) {
+                    best = delta;
+                }
+                break;
+            }
+        }
+
+        *hot = 100.0 * best / hz / elapsed_s;
+        *all = 100.0 * total / hz / elapsed_s;
+    }
+
+    memcpy(g_prev_threads, cur, n * sizeof(cur[0]));
+    g_prev_thread_count = n;
+}
+
 static long read_long_file(const char *path)
 {
     FILE *f = fopen(path, "r");
@@ -220,7 +327,7 @@ void pgraph_vk_perflog_init(void)
             "# kind=window: elapsed_s,frames,fps,frame_ms_avg,frame_ms_p50,"
             "frame_ms_p99,frame_ms_max,fps_1pct_low,stutters,"
             "download_ms_avg,upload_ms_avg,tex_cache_mb,resolution\n"
-            ",cpu_temp_c,cpu_mhz"
+            ",cpu_temp_c,cpu_mhz,hot_thread_pct,all_threads_pct"
             "\n"
             "# kind=stutter: elapsed_s,frame_ms,download_ms,upload_ms,"
             "tex_cache_mb,resolution\n"
@@ -348,9 +455,13 @@ static void perflog_flush_window(int64_t now, uint64_t tex_bytes,
             g_perflog.upload_ms / n, (double)tex_bytes / (1024 * 1024), width,
             height);
 
-    fprintf(g_perflog.f, ",%.1f,%ld",
+    double hot_thread_pct, all_threads_pct;
+    thread_cpu_percent(elapsed_s, &hot_thread_pct, &all_threads_pct);
+
+    fprintf(g_perflog.f, ",%.1f,%ld,%.1f,%.1f",
             cpu_mdeg >= 0 ? cpu_mdeg / 1000.0 : -1.0,
-            cpu_khz >= 0 ? cpu_khz / 1000 : -1);
+            cpu_khz >= 0 ? cpu_khz / 1000 : -1, hot_thread_pct,
+            all_threads_pct);
 
     /* Per-frame averages: a hitch caused by compiling a shader shows up as a
      * non-zero shader_gen or pipeline_gen, while a GPU that simply has too much
