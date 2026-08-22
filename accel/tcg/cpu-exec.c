@@ -821,6 +821,22 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
 #else
+    {
+        /* Per TB execution this path costs a seq-cst store with a full barrier
+         * plus an atomic read, which on a weakly ordered host is not free.
+         * Count how often the check actually finds work, so it is clear whether
+         * the cost is the Xbox raising interrupts or merely looking for them. */
+        static uint64_t xq_iter, xq_hit, xq_next = 1;
+        xq_iter++;
+        if (cpu_test_interrupt(cpu, ~0)) {
+            xq_hit++;
+        }
+        if (xq_iter == xq_next) {
+            xq_next *= 10;
+            fprintf(stderr, "xtrace: irqcheck iters=%llu hits=%llu\n",
+                    (unsigned long long)xq_iter, (unsigned long long)xq_hit);
+        }
+    }
     if (unlikely(cpu_test_interrupt(cpu, ~0))) {
         bql_lock();
         if (cpu_test_interrupt(cpu, CPU_INTERRUPT_DEBUG)) {
