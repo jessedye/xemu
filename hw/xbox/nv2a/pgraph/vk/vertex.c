@@ -247,6 +247,30 @@ static char const * const vertex_data_array_format_to_str[] = {
     [NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_CMP] = "CMP",
 };
 
+VkFormat pgraph_vk_vertex_format_for_attribute(const VertexAttribute *attr)
+{
+    switch (attr->format) {
+    case NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_UB_D3D:
+    case NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_UB_OGL:
+        if (attr->count < 1 || attr->count > ARRAY_SIZE(ub_to_count)) {
+            return VK_FORMAT_UNDEFINED;
+        }
+        return ub_to_count[attr->count - 1];
+    case NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_S1:
+        if (attr->count < 1 || attr->count > ARRAY_SIZE(s1_to_count)) {
+            return VK_FORMAT_UNDEFINED;
+        }
+        return s1_to_count[attr->count - 1];
+    case NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_S32K:
+        if (attr->count < 1 || attr->count > ARRAY_SIZE(s32k_to_count)) {
+            return VK_FORMAT_UNDEFINED;
+        }
+        return s32k_to_count[attr->count - 1];
+    default:
+        return VK_FORMAT_UNDEFINED;
+    }
+}
+
 void pgraph_vk_bind_vertex_attributes(NV2AState *d, unsigned int min_element,
                                       unsigned int max_element,
                                       bool inline_data,

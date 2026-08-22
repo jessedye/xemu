@@ -581,6 +581,7 @@ void pgraph_vk_transition_image_layout(PGRAPHState *pg, VkCommandBuffer cmd,
                                        VkImageLayout newLayout);
 
 // vertex.c
+VkFormat pgraph_vk_vertex_format_for_attribute(const VertexAttribute *attr);
 void pgraph_vk_bind_vertex_attributes(NV2AState *d, unsigned int min_element,
                                       unsigned int max_element,
                                       bool inline_data,
