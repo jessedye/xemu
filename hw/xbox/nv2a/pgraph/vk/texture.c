@@ -1223,6 +1223,16 @@ static void create_texture(PGRAPHState *pg, int texture_idx)
                  surface->color && surface != r->color_binding &&
                  vkf.vk_format == surface->host_fmt.vk_format;
 
+    if (r->surface_general_layout && surface_to_texture && !alias) {
+        if (!surface->color) {
+            nv2a_profile_inc_counter(NV2A_PROF_ALIAS_REJ_DEPTH);
+        } else if (surface == r->color_binding) {
+            nv2a_profile_inc_counter(NV2A_PROF_ALIAS_REJ_TARGET);
+        } else {
+            nv2a_profile_inc_counter(NV2A_PROF_ALIAS_REJ_FORMAT);
+        }
+    }
+
     /* Aliasing a surface drawn in this command buffer needs a write-to-sample
      * barrier, and a barrier cannot be recorded inside a render pass, so it
      * ends one. Halo 2 pays that 52 times a frame - 69% of its boundaries and
