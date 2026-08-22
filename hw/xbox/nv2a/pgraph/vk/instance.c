@@ -568,6 +568,35 @@ static bool create_logical_device(PGRAPHState *pg, Error **errp)
         next_struct = &custom_border_features;
     }
 
+    /* EXTERNALLY_SYNCHRONIZED on the pipeline cache is only legal when this
+     * feature is enabled. The mutex is what makes concurrent use safe; the flag
+     * only tells the driver it may skip its own locking, so where the feature
+     * is unavailable the flag is simply left off. */
+    VkPhysicalDevicePipelineCreationCacheControlFeatures cache_control_features;
+    r->pipeline_cache_control_enabled = false;
+    if (r->device_props.apiVersion >= VK_API_VERSION_1_3) {
+        VkPhysicalDevicePipelineCreationCacheControlFeatures supported = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES,
+        };
+        VkPhysicalDeviceFeatures2 features2 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &supported,
+        };
+        vkGetPhysicalDeviceFeatures2(r->physical_device, &features2);
+        if (supported.pipelineCreationCacheControl) {
+            cache_control_features =
+                (VkPhysicalDevicePipelineCreationCacheControlFeatures){
+                    .sType =
+                        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES,
+                    .pipelineCreationCacheControl = VK_TRUE,
+                    .pNext = next_struct,
+                };
+            next_struct = &cache_control_features;
+            r->pipeline_cache_control_enabled = true;
+        }
+    }
+
     VkDeviceCreateInfo device_create_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,

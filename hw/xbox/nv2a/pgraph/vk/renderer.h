@@ -377,6 +377,8 @@ typedef struct PGRAPHVkState {
     VkPhysicalDevice physical_device;
     VkPhysicalDeviceFeatures enabled_physical_device_features;
     VkPhysicalDeviceProperties device_props;
+    bool pipeline_cache_control_enabled;
+    bool pipeline_compile_deferred;
     VkDevice device;
     VmaAllocator allocator;
     uint32_t allocator_last_submit_index;
