@@ -56,6 +56,15 @@ typedef struct SyncClocks {
     int64_t realtime_clock;
 } SyncClocks;
 
+static inline TCGTBCPUState cpu_get_tb_cpu_state(CPUState *cpu)
+{
+#ifdef XBOX
+    return xemu_get_tb_cpu_state(cpu);
+#else
+    return cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+#endif
+}
+
 #if !defined(CONFIG_USER_ONLY)
 /* Allow the guest to have a max 3ms advance.
  * The difference between the 2 clocks could therefore
@@ -407,7 +416,7 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+    TCGTBCPUState s = cpu_get_tb_cpu_state(cpu);
     s.cflags = curr_cflags(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
@@ -579,7 +588,7 @@ void cpu_exec_step_atomic(CPUState *cpu)
         g_assert(!cpu->running);
         cpu->running = true;
 
-        TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+        TCGTBCPUState s = cpu_get_tb_cpu_state(cpu);
         s.cflags = curr_cflags(cpu);
 
         /* Execute in a serial context. */
@@ -965,7 +974,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
-            TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+            TCGTBCPUState s = cpu_get_tb_cpu_state(cpu);
             s.cflags = cpu->cflags_next_tb;
 
             /*

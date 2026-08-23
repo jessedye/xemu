@@ -19,6 +19,10 @@
 #include "accel/tcg/tb-cpu-state.h"
 #include "tcg/tcg-mo.h"
 
+#ifdef XBOX
+TCGTBCPUState xemu_get_tb_cpu_state(CPUState *cs);
+#endif
+
 struct TCGCPUOps {
     /**
      * mttcg_supported: multi-threaded TCG is supported
