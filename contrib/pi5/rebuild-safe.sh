@@ -18,6 +18,8 @@ set -uo pipefail
 SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -o ConnectTimeout=20 retropie"
 JOBS=2
 MIN_FREE_MB=900
+BUILD_CFLAGS="${XEMU_BUILD_CFLAGS:--O3 -flto=1 -mcpu=cortex-a76}"
+BUILD_LDFLAGS="${XEMU_BUILD_LDFLAGS:--flto=1}"
 
 exec 9>/tmp/xemu-rebuild.lock
 flock -n 9 || { echo "[$(date +%T)] another rebuild holds the lock - skipping"; exit 0; }
@@ -42,8 +44,8 @@ BRANCH="${XEMU_BRANCH:-vulkan-ui-without-gl4}"
 # branch never gets a remote-tracking ref.
 $SSH "cd ~/xemu-build && git fetch -q origin +refs/heads/$BRANCH:refs/remotes/origin/$BRANCH && git reset -q --hard origin/$BRANCH && git log --oneline -1" || exit 1
 
-echo "[$(date +%T)] building -j${JOBS} with single-threaded LTO"
-$SSH "cd ~/xemu-build && CFLAGS='-O3 -flto=1' LDFLAGS='-flto=1' ./build.sh -j${JOBS} --enable-lto > /tmp/xbuild.log 2>&1; echo rc=\$?; tail -6 /tmp/xbuild.log"
+echo "[$(date +%T)] building -j${JOBS} with CFLAGS=${BUILD_CFLAGS}"
+$SSH "cd ~/xemu-build && CFLAGS='$BUILD_CFLAGS' LDFLAGS='$BUILD_LDFLAGS' ./build.sh -j${JOBS} --enable-lto > /tmp/xbuild.log 2>&1; echo rc=\$?; tail -6 /tmp/xbuild.log"
 $SSH 'free -m | sed -n 2,3p'
 # Only six lines of the build log come back above, so compile errors would go
 # unseen. Surface them explicitly, and confirm the binary really was relinked.
