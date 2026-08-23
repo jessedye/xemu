@@ -92,6 +92,23 @@ static void note_vertex_conflict(PGRAPHVkState *r, hwaddr offset)
     }
 }
 
+uint8_t *pgraph_vk_reserve_vertex_inline_buffer(PGRAPHState *pg,
+                                                VkDeviceSize size,
+                                                VkDeviceSize *offset)
+{
+    PGRAPHVkState *r = pg->vk_renderer_state;
+    StorageBuffer *b = &r->storage_buffers[BUFFER_VERTEX_INLINE_STAGING];
+
+    nv2a_profile_inc_counter(NV2A_PROF_GEOM_BUFFER_UPDATE_3);
+    assert(pgraph_vk_buffer_has_space_for(pg, BUFFER_VERTEX_INLINE_STAGING,
+                                          size, 1));
+    assert(b->mapped);
+
+    *offset = b->buffer_offset;
+    b->buffer_offset += size;
+    return b->mapped + *offset;
+}
+
 void pgraph_vk_update_vertex_ram_buffer(PGRAPHState *pg, hwaddr offset,
                                         void *data, VkDeviceSize size)
 {
