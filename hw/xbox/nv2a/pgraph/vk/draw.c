@@ -2313,6 +2313,7 @@ static VkFormat substitute_vertex_format(VkFormat fmt,
 static void convert_inline_array(PGRAPHState *pg, uint8_t *dst,
                                  unsigned int dst_stride,
                                  const unsigned int *src_offsets,
+                                 const unsigned int *dst_offsets,
                                  unsigned int src_stride, unsigned int count,
                                  const enum VertexConvert *conv)
 {
@@ -2326,7 +2327,7 @@ static void convert_inline_array(PGRAPHState *pg, uint8_t *dst,
             }
 
             const uint8_t *in = src + (size_t)v * src_stride + src_offsets[i];
-            uint8_t *out = dst + (size_t)v * dst_stride + attr->inline_array_offset;
+            uint8_t *out = dst + (size_t)v * dst_stride + dst_offsets[i];
 
             switch (conv[i]) {
             case VTX_CONVERT_S16_TO_F32:
@@ -2709,11 +2710,10 @@ void pgraph_vk_flush_draw(NV2AState *d)
         nv2a_profile_inc_counter(NV2A_PROF_INLINE_ARRAYS);
 
         VkDeviceSize inline_array_data_size = pg->inline_array_length * 4;
-        ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING,
-                               inline_array_data_size);
 
         unsigned int offset = 0;
         unsigned int src_offsets[NV2A_VERTEXSHADER_ATTRIBUTES];
+        unsigned int dst_offsets[NV2A_VERTEXSHADER_ATTRIBUTES];
         unsigned int src_size = 0;
         enum VertexConvert conv[NV2A_VERTEXSHADER_ATTRIBUTES] = { 0 };
         VkFormat sub[NV2A_VERTEXSHADER_ATTRIBUTES] = { 0 };
@@ -2729,6 +2729,7 @@ void pgraph_vk_flush_draw(NV2AState *d)
             src_offsets[i] = src_size;
             src_size += attr->size * attr->count;
             src_size = ROUND_UP(src_size, attr->size);
+            attr->inline_array_offset = src_offsets[i];
 
             VkFormat fmt = pgraph_vk_vertex_format_for_attribute(attr);
             unsigned int esize = attr->size;
@@ -2748,7 +2749,7 @@ void pgraph_vk_flush_draw(NV2AState *d)
 
             /* FIXME: Double check */
             offset = ROUND_UP(offset, esize);
-            attr->inline_array_offset = offset;
+            dst_offsets[i] = offset;
             NV2A_DPRINTF("bind inline attribute %d size=%d, count=%d\n", i,
                          attr->size, attr->count);
             offset += esize * attr->count;
@@ -2758,25 +2759,34 @@ void pgraph_vk_flush_draw(NV2AState *d)
         unsigned int vertex_size = offset;
         unsigned int index_count = pg->inline_array_length * 4 / src_size;
 
-        NV2A_DPRINTF("draw inline array %d, %d\n", vertex_size, index_count);
-        pgraph_vk_bind_vertex_attributes(d, 0, index_count - 1, true,
-                                         vertex_size, index_count - 1);
-
         g_autofree uint8_t *converted = NULL;
         if (any_convert) {
-            for (int i = 0; i < NV2A_VERTEXSHADER_ATTRIBUTES; i++) {
-                int loc = r->vertex_attribute_to_description_location[i];
-                if (loc >= 0 && sub[i] != VK_FORMAT_UNDEFINED) {
-                    r->vertex_attribute_descriptions[loc].format = sub[i];
-                }
-            }
-
             inline_array_data_size = (VkDeviceSize)vertex_size * index_count;
             converted = g_malloc0(inline_array_data_size);
             convert_inline_array(pg, converted, vertex_size, src_offsets,
-                                 src_size, index_count, conv);
-            ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING,
-                                inline_array_data_size);
+                                 dst_offsets, src_size, index_count, conv);
+        }
+        ensure_buffer_space(pg, BUFFER_VERTEX_INLINE_STAGING,
+                            inline_array_data_size);
+
+        NV2A_DPRINTF("draw inline array %d, %d\n", vertex_size, index_count);
+        pgraph_vk_bind_vertex_attributes(d, 0, index_count - 1, true,
+                                         src_size, index_count - 1);
+
+        if (any_convert) {
+            for (int i = 0; i < NV2A_VERTEXSHADER_ATTRIBUTES; i++) {
+                int loc = r->vertex_attribute_to_description_location[i];
+                if (loc < 0) {
+                    continue;
+                }
+
+                r->vertex_binding_descriptions[loc].stride = vertex_size;
+                r->vertex_attribute_offsets[i] = dst_offsets[i];
+                pg->vertex_attributes[i].inline_array_offset = dst_offsets[i];
+                if (sub[i] != VK_FORMAT_UNDEFINED) {
+                    r->vertex_attribute_descriptions[loc].format = sub[i];
+                }
+            }
         }
 
         begin_pre_draw(pg);
